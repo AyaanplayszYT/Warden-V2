@@ -1,0 +1,23 @@
+{
+  "name": "warden-bot",
+  "version": "1.0.0",
+  "description": "A multi-purpose Discord moderation bot.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "moderation",
+    "discord.js"
+  ],
+  "author": "AI",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.15.3",
+    "dotenv": "^16.4.5",
+    "ms": "^2.1.3"
+  }
+}
