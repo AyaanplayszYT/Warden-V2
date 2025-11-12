@@ -1,4 +1,4 @@
-const { EmbedBuilder } = require('discord.js');
+const { PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const colors = require('../../config/colors.json');
 const modLogs = require('../../utils/modLogs');
 const logger = require('../../utils/logger');
@@ -11,21 +11,39 @@ module.exports = {
         cooldown: 10,
         options: [],
     },
+
     async execute(context, args) {
-        const logs = modLogs.getAll().slice(0, 10);
-        if (logs.length === 0) {
-            if (context.channel?.send) return context.channel.send('No moderation logs yet.');
-            if (context.isChatInputCommand) return context.reply({ content: 'No moderation logs yet.', ephemeral: true });
-            return;
+        // 🔒 Moderator-only check
+        const memberExecutor = context.member || await context.guild.members.fetch(context.user.id);
+        if (!memberExecutor.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+            return context.reply({
+                content: '🚫 You don’t have permission to view moderation logs. (Moderators only)',
+                ephemeral: true,
+            });
         }
-        let desc = logs.map(log => `**${log.type.toUpperCase()}** | ${log.user} (${log.userId}) | #${log.channel} | ${log.content ? log.content.substring(0, 50) : ''} | ${log.time}`).join('\n');
+
+        const logs = modLogs.getAll().slice(0, 10);
+
+        if (logs.length === 0) {
+            return context.reply({
+                content: 'ℹ️ No moderation logs yet.',
+                ephemeral: true,
+            });
+        }
+
+        let desc = logs
+            .map(log => `**${log.type.toUpperCase()}** | ${log.user} (${log.userId}) | #${log.channel} | ${log.content ? log.content.substring(0, 50) : ''} | ${log.time}`)
+            .join('\n');
+
         const embed = new EmbedBuilder()
-            .setColor('#ED4245')
+            .setColor(colors.error || '#ED4245')
             .setTitle('🛡️ Recent Moderation Logs')
             .setDescription('Here are the latest moderation actions:\n\n' + desc)
             .setFooter({ text: 'Powered by Warden | Made By Mistiz911' })
             .setTimestamp();
+
         logger.info(`Modlogs command used by ${(context.author?.tag || context.user?.tag)}`);
+
         if (context.channel?.send) {
             await context.channel.send({ embeds: [embed] });
         } else if (context.isChatInputCommand) {
