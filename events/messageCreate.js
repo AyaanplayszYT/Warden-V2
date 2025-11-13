@@ -1,5 +1,5 @@
-const { Events, Collection } = require('discord.js');
-const { prefix } = require('../config/config.json');
+const { Events, Collection, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { prefix, ownerId } = require('../config/config.json');
 const logger = require('../utils/logger');
 
 module.exports = {
@@ -7,17 +7,26 @@ module.exports = {
     async execute(message, client) {
         // Prevent non-mods from pinging @everyone or @here
         if ((message.mentions.everyone || message.content.includes('@everyone') || message.content.includes('@here')) && !message.author.bot) {
-            const { PermissionFlagsBits, EmbedBuilder } = require('discord.js');
-            const ownerId = require('../config/config.json').ownerId;
             const member = message.member;
             const isAdmin = member && (member.permissions.has(PermissionFlagsBits.Administrator) || member.permissions.has(PermissionFlagsBits.ManageMessages));
             const isOwner = message.author.id === ownerId;
+
             if (!isAdmin && !isOwner) {
                 await message.delete().catch(() => {});
+
+                // Mute the user for 10 minutes
+                const muteDuration = 10 * 60 * 1000; // 10 minutes in ms
+                try {
+                    await member.timeout(muteDuration, 'Attempted to mention @everyone or @here');
+                } catch (err) {
+                    logger.error(`Failed to mute ${message.author.tag}:`, err);
+                }
+
                 // DM the user a warning
                 try {
-                    await message.author.send('You are not allowed to mention everyone or here in this server. This action has been logged.');
+                    await message.author.send('You are not allowed to mention everyone or here in this server. You have been muted for 10 minutes.');
                 } catch (e) {}
+
                 // Log to modlogs channel
                 try {
                     const modLogId = require('../data/logChannels.json').modLog;
@@ -26,25 +35,32 @@ module.exports = {
                         const embed = new EmbedBuilder()
                             .setColor(0xED4245)
                             .setTitle('Unauthorized Mass Mention')
-                            .setDescription(`${message.author} (${message.author.tag}, ID: ${message.author.id}) tried to mention everyone or here.`)
+                            .setDescription(`${message.author} (${message.author.tag}, ID: ${message.author.id}) tried to mention everyone or here.`)
                             .addFields(
                                 { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
-                                { name: 'Message Content', value: message.content.substring(0, 1024) }
+                                { name: 'Message Content', value: message.content.substring(0, 1024) },
+                                { name: 'Action Taken', value: 'User has been muted for 10 minutes.' }
                             )
                             .setTimestamp();
                         await modLogChannel.send({ embeds: [embed] });
                     }
                 } catch (e) {}
-                return message.channel.send({ content: `${message.author}, you are not allowed to mention everyone or here!`, allowedMentions: { users: [message.author.id] } });
+
+                // Send a public warning message
+                return message.channel.send({
+                    content: `${message.author}, you are not allowed to mention @ everyone or @ here! You have been **muted for 10 minutes**. Your actions have been logged.`,
+                    allowedMentions: { users: [message.author.id] }
+                });
             }
         }
 
-        // Respond to bot mention with a text message
+        // Respond to bot mention with a fun message
         if (message.mentions.has(client.user) && !message.author.bot) {
             logger.info('Bot was mentioned, sending dare message.');
             return message.reply('https://tenor.com/view/zakir-naik-muslim-candles-fierce-point-gif-17453203');
         }
 
+        // Command handling
         if (!message.content.startsWith(prefix) || message.author.bot) return;
 
         const args = message.content.slice(prefix.length).trim().split(/ +/);
