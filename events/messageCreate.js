@@ -42,7 +42,7 @@ module.exports = {
         // Respond to bot mention with a text message
         if (message.mentions.has(client.user) && !message.author.bot) {
             logger.info('Bot was mentioned, sending dare message.');
-            return message.reply('HOW DARE U PING ME.. LOCK UR DOOOR 😈');
+            return message.reply('https://tenor.com/view/zakir-naik-muslim-candles-fierce-point-gif-17453203');
         }
 
         if (!message.content.startsWith(prefix) || message.author.bot) return;
