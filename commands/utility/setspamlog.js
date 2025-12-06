@@ -1,42 +1,68 @@
+const { PermissionFlagsBits, ChannelType } = require('discord.js');
+const { WardenEmbed, EmbedTemplates, emojis } = require('../../utils/embedBuilder');
+const logger = require('../../utils/logger');
 const fs = require('fs');
 const path = require('path');
-const logger = require('../../utils/logger');
 
 module.exports = {
     data: {
         name: 'setspamlog',
-        description: 'Set this channel as the spam log channel.',
-        aliases: [],
-        cooldown: 30,
-        options: [],
+        description: 'Set or remove the spam/message log channel.',
+        options: [
+            {
+                name: 'channel',
+                description: 'The channel to use for spam logs (leave empty to use current channel)',
+                type: 7,
+                required: false,
+                channel_types: [ChannelType.GuildText, ChannelType.GuildAnnouncement],
+            },
+            {
+                name: 'disable',
+                description: 'Disable the spam log channel',
+                type: 5,
+                required: false,
+            },
+        ],
+        default_member_permissions: PermissionFlagsBits.ManageGuild,
     },
-    async execute(context, args) {
+
+    async execute(interaction) {
+        if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+            return interaction.reply({
+                embeds: [EmbedTemplates.error('Permission Denied', 'You need the Manage Server permission.')],
+                ephemeral: true,
+            });
+        }
+
+        const channel = interaction.options.getChannel('channel') || interaction.channel;
+        const disable = interaction.options.getBoolean('disable') || false;
+
         const filePath = path.join(__dirname, '../../data/logChannels.json');
-        let logChannels = {};
+        let logChannels = { modLog: '', spamLog: '' };
         try {
             logChannels = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        } catch (e) {
-            logChannels = { modLog: '', spamLog: '' };
-        }
-        const currentId = context.channel?.id || context.channelId;
-        if (logChannels.spamLog === currentId) {
+        } catch (e) {}
+
+        if (disable) {
             logChannels.spamLog = '';
             fs.writeFileSync(filePath, JSON.stringify(logChannels, null, 2));
-            logger.info(`Spam log channel unset by ${(context.author?.tag || context.user?.tag)}`);
-            if (context.channel?.send) {
-                await context.channel.send('This channel is no longer the spam log channel.');
-            } else if (context.isChatInputCommand) {
-                await context.reply({ content: 'This channel is no longer the spam log channel.' });
-            }
-        } else {
-            logChannels.spamLog = currentId;
-            fs.writeFileSync(filePath, JSON.stringify(logChannels, null, 2));
-            logger.info(`Spam log channel set to ${logChannels.spamLog} by ${(context.author?.tag || context.user?.tag)}`);
-            if (context.channel?.send) {
-                await context.channel.send('This channel is now set as the spam log channel.');
-            } else if (context.isChatInputCommand) {
-                await context.reply({ content: 'This channel is now set as the spam log channel.' });
-            }
+            return interaction.reply({
+                embeds: [EmbedTemplates.success('Spam Log Disabled', 'Message/spam logging has been disabled.')],
+            });
         }
+
+        logChannels.spamLog = channel.id;
+        fs.writeFileSync(filePath, JSON.stringify(logChannels, null, 2));
+
+        const embed = new WardenEmbed()
+            .setType('success')
+            .setTitle(`${emojis.success} Spam Log Channel Set`)
+            .setDescription(`Message edits, deletions, and spam detections will now be logged to ${channel}.`)
+            .addField('Channel', `${channel}`, true)
+            .addField('Set By', interaction.user.tag, true)
+            .build();
+
+        await interaction.reply({ embeds: [embed] });
+        logger.info(`Spam log channel set to ${channel.name} by ${interaction.user.tag}`);
     },
 };

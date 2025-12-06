@@ -3,13 +3,33 @@
     const fs = require('fs');
     const path = require('path');
 
+    // Import snipe cache from snipe command
+    let snipeCommand;
+    try {
+        snipeCommand = require('../commands/utility/snipe');
+    } catch (e) {
+        // Snipe command not available
+    }
+
     module.exports = {
         name: Events.MessageUpdate,
         async execute(oldMessage, newMessage, client) {
-        // Ignore logs for bots by user ID (cricket guru: 814100764787081217)
-        const botIdsToIgnore = ['814100764787081217'];
-        const authorIsIgnoredBot = oldMessage.author && oldMessage.author.bot && botIdsToIgnore.includes(oldMessage.author.id);
-        if (!oldMessage.partial && oldMessage.guild && oldMessage.content !== newMessage.content && !authorIsIgnoredBot) {
+            // Skip partial messages or non-guild messages
+            if (oldMessage.partial || !oldMessage.guild || !oldMessage.author) return;
+            
+            // Skip if content didn't change
+            if (oldMessage.content === newMessage.content) return;
+            
+            // Add to snipe cache
+            if (snipeCommand && snipeCommand.addEditedMessage && !oldMessage.author.bot) {
+                snipeCommand.addEditedMessage(oldMessage.channel.id, oldMessage, newMessage);
+            }
+            
+            // Ignore logs for bots by user ID
+            const botIdsToIgnore = ['814100764787081217'];
+            const authorIsIgnoredBot = oldMessage.author.bot && botIdsToIgnore.includes(oldMessage.author.id);
+            
+            if (!authorIsIgnoredBot) {
                 let spamLogsChannelId = '';
                 try {
                     const logChannels = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/logChannels.json'), 'utf8'));

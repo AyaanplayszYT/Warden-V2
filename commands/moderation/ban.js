@@ -1,16 +1,14 @@
-const { PermissionFlagsBits, EmbedBuilder } = require('discord.js');
-const colors = require('../../config/colors.json');
+const { PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
+const { EmbedTemplates, WardenEmbed, emojis, colors } = require('../../utils/embedBuilder');
+const warningsDB = require('../../utils/warningsDB');
+const logger = require('../../utils/logger');
 const fs = require('fs');
 const path = require('path');
 
 module.exports = {
     data: {
         name: 'ban',
-        description: 'Bans a user from the server.',
-        aliases: ['b'],
-        cooldown: 5,
-        userPermissions: [PermissionFlagsBits.BanMembers],
-        botPermissions: [PermissionFlagsBits.BanMembers],
+        description: 'Ban a user from the server with optional message deletion.',
         options: [
             {
                 name: 'user',
@@ -20,94 +18,208 @@ module.exports = {
             },
             {
                 name: 'reason',
-                description: 'Reason for ban',
+                description: 'Reason for the ban',
                 type: 3, // STRING
                 required: false,
             },
+            {
+                name: 'delete_messages',
+                description: 'Delete messages from the past X days (0-7)',
+                type: 4, // INTEGER
+                required: false,
+                choices: [
+                    { name: "Don't delete any", value: 0 },
+                    { name: 'Previous 1 day', value: 1 },
+                    { name: 'Previous 3 days', value: 3 },
+                    { name: 'Previous 7 days', value: 7 },
+                ],
+            },
+            {
+                name: 'silent',
+                description: 'Do not notify the user via DM',
+                type: 5, // BOOLEAN
+                required: false,
+            },
         ],
+        default_member_permissions: PermissionFlagsBits.BanMembers,
     },
 
-    async execute(context, args) {
-        // 🔒 Moderator permission check
-        const memberExecutor = context.member || await context.guild.members.fetch(context.user.id);
-        if (!memberExecutor.permissions.has(PermissionFlagsBits.BanMembers)) {
-            return context.reply({
-                content: '🚫 You don’t have permission to use this command. (Ban Members only)',
-                ephemeral: true,
+    async execute(interaction) {
+        // Defer reply for processing time
+        await interaction.deferReply();
+
+        const targetUser = interaction.options.getUser('user');
+        const reason = interaction.options.getString('reason') || 'No reason provided';
+        const deleteMessageDays = interaction.options.getInteger('delete_messages') || 0;
+        const silent = interaction.options.getBoolean('silent') || false;
+
+        // Fetch the member if they're in the guild
+        const targetMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
+
+        // Permission checks
+        if (!interaction.member.permissions.has(PermissionFlagsBits.BanMembers)) {
+            return interaction.editReply({
+                embeds: [EmbedTemplates.error('Permission Denied', 'You need the **Ban Members** permission to use this command.')],
             });
         }
 
-        let member, reason;
-        if (context.isChatInputCommand) {
-            member = await context.guild.members.fetch(context.options.getUser('user').id).catch(() => null);
-            reason = context.options.getString('reason') || 'No reason provided.';
-        } else {
-            member = context.mentions?.members?.first() || await context.guild.members.fetch(args[0]).catch(() => null);
-            reason = args?.slice(1).join(' ') || 'No reason provided.';
-        }
-
-        if (!member) {
-            return context.reply({
-                content: '❗ You need to mention a user or provide a valid user ID to ban.',
-                ephemeral: true,
+        if (targetUser.id === interaction.user.id) {
+            return interaction.editReply({
+                embeds: [EmbedTemplates.error('Invalid Target', 'You cannot ban yourself!')],
             });
         }
 
-        if (member.id === (context.author?.id || context.user?.id)) {
-            return context.reply({ content: '⚠️ You cannot ban yourself.', ephemeral: true });
+        if (targetUser.id === interaction.client.user.id) {
+            return interaction.editReply({
+                embeds: [EmbedTemplates.error('Invalid Target', 'I cannot ban myself!')],
+            });
         }
 
-        if (member.id === context.client.user.id) {
-            return context.reply({ content: '⚠️ You cannot ban me.', ephemeral: true });
+        // Check if user is already banned
+        const existingBan = await interaction.guild.bans.fetch(targetUser.id).catch(() => null);
+        if (existingBan) {
+            return interaction.editReply({
+                embeds: [EmbedTemplates.error('Already Banned', `**${targetUser.tag}** is already banned from this server.`)],
+            });
         }
 
-        if (!member.bannable) {
-            return context.reply({ content: '❌ I cannot ban this user. They might have a higher role than me.', ephemeral: true });
+        // Role hierarchy check
+        if (targetMember) {
+            if (!targetMember.bannable) {
+                return interaction.editReply({
+                    embeds: [EmbedTemplates.error('Cannot Ban', 'I cannot ban this user. They may have a higher role than me or I lack permissions.')],
+                });
+            }
+
+            if (interaction.member.roles.highest.position <= targetMember.roles.highest.position) {
+                return interaction.editReply({
+                    embeds: [EmbedTemplates.error('Role Hierarchy', 'You cannot ban a user with an equal or higher role than you.')],
+                });
+            }
         }
 
-        if (context.member?.roles?.highest?.position <= member.roles.highest.position) {
-            return context.reply({ content: '🚫 You cannot ban a user with an equal or higher role than you.', ephemeral: true });
-        }
+        // Confirmation dialog
+        const confirmEmbed = new WardenEmbed()
+            .setType('warning')
+            .setTitle(`${emojis.warning} Confirm Ban`)
+            .setDescription(`Are you sure you want to ban **${targetUser.tag}**?`)
+            .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
+            .addField(`${emojis.user} User`, `${targetUser.tag}\n\`${targetUser.id}\``, true)
+            .addField(`${emojis.edit} Reason`, reason, true)
+            .addField(`${emojis.delete} Delete Messages`, deleteMessageDays > 0 ? `Past ${deleteMessageDays} day(s)` : 'None', true)
+            .build();
 
+        const confirmRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('ban_confirm')
+                .setLabel('Ban User')
+                .setStyle(ButtonStyle.Danger)
+                .setEmoji('🔨'),
+            new ButtonBuilder()
+                .setCustomId('ban_cancel')
+                .setLabel('Cancel')
+                .setStyle(ButtonStyle.Secondary)
+                .setEmoji('❌')
+        );
+
+        const confirmMessage = await interaction.editReply({
+            embeds: [confirmEmbed],
+            components: [confirmRow],
+        });
+
+        // Wait for button interaction
         try {
-            await member.ban({ reason: `Banned by ${(context.author?.tag || context.user?.tag)}. Reason: ${reason}` });
+            const buttonInteraction = await confirmMessage.awaitMessageComponent({
+                componentType: ComponentType.Button,
+                filter: i => i.user.id === interaction.user.id,
+                time: 30000,
+            });
 
-            const banEmbed = new EmbedBuilder()
-                .setColor(colors.error || '#ED4245')
-                .setTitle('⛔ User Banned')
-                .addFields(
-                    { name: '👤 User', value: `${member.user.tag} (${member.id})`, inline: true },
-                    { name: '🛡️ Moderator', value: `${context.user.tag}`, inline: true },
-                    { name: '📝 Reason', value: reason, inline: false }
-                )
-                .setFooter({ text: 'Powered by Warden' })
-                .setTimestamp();
-
-            // 🧾 Send to mod log channel
-            let modLogChannelId = '';
-            try {
-                const logChannels = JSON.parse(fs.readFileSync(path.join(__dirname, '../../data/logChannels.json'), 'utf8'));
-                modLogChannelId = logChannels.modLog;
-            } catch (e) {}
-
-            if (modLogChannelId) {
-                const modLogChannel = context.guild.channels.cache.get(modLogChannelId);
-                if (modLogChannel) await modLogChannel.send({ embeds: [banEmbed] });
+            if (buttonInteraction.customId === 'ban_cancel') {
+                const cancelEmbed = EmbedTemplates.info('Ban Cancelled', `The ban action for **${targetUser.tag}** has been cancelled.`);
+                return buttonInteraction.update({ embeds: [cancelEmbed], components: [] });
             }
 
-            // ✅ Reply in channel
-            if (context.channel?.send) {
-                await context.channel.send({ embeds: [banEmbed] });
-            } else if (context.isChatInputCommand) {
-                await context.reply({ embeds: [banEmbed] });
+            // Proceed with ban
+            await buttonInteraction.deferUpdate();
+
+            // DM the user before banning (if not silent)
+            let dmSent = false;
+            if (!silent && targetMember) {
+                try {
+                    const dmEmbed = EmbedTemplates.modDM({
+                        action: 'ban',
+                        guildName: interaction.guild.name,
+                        guildIcon: interaction.guild.iconURL({ dynamic: true }),
+                        moderator: interaction.user,
+                        reason,
+                    });
+                    await targetUser.send({ embeds: [dmEmbed] });
+                    dmSent = true;
+                } catch (error) {
+                    logger.warn(`Could not DM ${targetUser.tag} about their ban.`);
+                }
             }
+
+            // Perform the ban
+            await interaction.guild.members.ban(targetUser.id, {
+                deleteMessageSeconds: deleteMessageDays * 24 * 60 * 60,
+                reason: `Banned by ${interaction.user.tag} | ${reason}`,
+            });
+
+            // Log to warnings database
+            const warning = warningsDB.add(interaction.guild.id, targetUser.id, {
+                moderatorId: interaction.user.id,
+                moderatorTag: interaction.user.tag,
+                reason,
+                type: 'ban',
+            });
+
+            // Create success embed
+            const successEmbed = EmbedTemplates.modAction({
+                action: 'ban',
+                target: targetUser,
+                moderator: interaction.user,
+                reason,
+                caseId: warning.caseId,
+                dmSent,
+            });
+
+            // Log to mod log channel
+            await logToModChannel(interaction.guild, successEmbed);
+
+            // Update the interaction
+            await buttonInteraction.editReply({
+                embeds: [successEmbed],
+                components: [],
+            });
+
+            logger.info(`${interaction.user.tag} banned ${targetUser.tag} from ${interaction.guild.name}. Reason: ${reason}`);
 
         } catch (error) {
-            console.error(error);
-            return context.reply({
-                content: '❌ An error occurred while trying to ban this user.',
-                ephemeral: true,
-            });
+            if (error.code === 'InteractionCollectorError') {
+                const timeoutEmbed = EmbedTemplates.error('Timed Out', 'Ban confirmation timed out. No action was taken.');
+                return interaction.editReply({ embeds: [timeoutEmbed], components: [] });
+            }
+
+            logger.error('Error during ban command:', error);
+            const errorEmbed = EmbedTemplates.error('Ban Failed', 'An error occurred while trying to ban this user.');
+            return interaction.editReply({ embeds: [errorEmbed], components: [] });
         }
     },
 };
+
+// Helper function to log to mod channel
+async function logToModChannel(guild, embed) {
+    try {
+        const logChannels = JSON.parse(fs.readFileSync(path.join(__dirname, '../../data/logChannels.json'), 'utf8'));
+        if (logChannels.modLog) {
+            const modLogChannel = guild.channels.cache.get(logChannels.modLog);
+            if (modLogChannel) {
+                await modLogChannel.send({ embeds: [embed] });
+            }
+        }
+    } catch (error) {
+        logger.warn('Could not log to mod channel:', error);
+    }
+}

@@ -4,13 +4,30 @@ const modLogs = require('../utils/modLogs');
 const fs = require('fs');
 const path = require('path');
 
+// Import snipe cache from snipe command
+let snipeCommand;
+try {
+    snipeCommand = require('../commands/utility/snipe');
+} catch (e) {
+    // Snipe command not available
+}
+
 module.exports = {
     name: Events.MessageDelete,
     async execute(message, client) {
-    // Ignore logs for bots by user ID (cricket guru: 814100764787081217)
-    const botIdsToIgnore = ['814100764787081217'];
-    const authorIsIgnoredBot = message.author && message.author.bot && botIdsToIgnore.includes(message.author.id);
-    if (!message.partial && message.guild && !authorIsIgnoredBot) {
+        // Skip partial messages or non-guild messages
+        if (message.partial || !message.guild || !message.author) return;
+        
+        // Add to snipe cache
+        if (snipeCommand && snipeCommand.addDeletedMessage && !message.author.bot) {
+            snipeCommand.addDeletedMessage(message.channel.id, message);
+        }
+        
+        // Ignore logs for bots by user ID
+        const botIdsToIgnore = ['814100764787081217'];
+        const authorIsIgnoredBot = message.author.bot && botIdsToIgnore.includes(message.author.id);
+        
+        if (!authorIsIgnoredBot) {
             const logEntry = {
                 type: 'delete',
                 user: message.author ? message.author.tag : 'Unknown',

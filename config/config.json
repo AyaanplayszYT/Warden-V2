@@ -1,4 +1,19 @@
 {
-  "prefix": "/",
-  "ownerId": "930685257206861935"
+  "prefix": "!",
+  "ownerId": "930685257206861935",
+  "defaultCooldown": 3,
+  "maxWarnings": 5,
+  "autoModEnabled": true,
+  "antiSpamEnabled": true,
+  "antiSpamThreshold": 5,
+  "antiSpamInterval": 5000,
+  "antiLinkEnabled": false,
+  "badWordsEnabled": false,
+  "welcomeChannelId": "",
+  "autoRoleId": "",
+  "embedFooter": "Warden Bot • Protecting Your Server",
+  "embedThumbnail": "",
+  "supportServer": "",
+  "inviteLink": "",
+  "version": "2.0.0"
 }
