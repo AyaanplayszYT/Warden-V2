@@ -33,10 +33,8 @@ module.exports = {
     },
 
     async execute(interaction) {
-        await interaction.deferReply();
-
         const targetUser = interaction.options.getUser('user') || interaction.user;
-        const member = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
+        const member = interaction.guild.members.cache.get(targetUser.id) || await interaction.guild.members.fetch(targetUser.id).catch(() => null);
 
         const flags = targetUser.flags?.toArray() || [];
         const badges = flags.map(flag => BADGES[UserFlags[flag]] || null).filter(Boolean);
@@ -54,7 +52,6 @@ module.exports = {
         };
         const statusText = statusMap[presence?.status || 'offline'] || 'OFFLINE';
 
-        // Key permissions
         const keyPermissions = [
             'Administrator',
             'ManageGuild',
@@ -71,7 +68,6 @@ module.exports = {
             memberKeyPerms = keyPermissions.filter(perm => member.permissions.has(perm));
         }
 
-        // Roles
         let rolesText = 'None';
         if (member) {
             const roles = member.roles.cache
@@ -89,7 +85,7 @@ module.exports = {
         const warningCount = userWarnings ? userWarnings.length : 0;
 
         const card = new V2Card()
-            .setAccent(member?.displayHexColor !== '#000000' ? member?.displayHexColor : 'primary')
+            .setAccent(member?.displayHexColor && member?.displayHexColor !== '#000000' ? member.displayHexColor : 'primary')
             .setTitle(`[USER INTELLIGENCE] ${targetUser.tag}`, `Discord Identifier: \`${targetUser.id}\``)
             .addField('Account Type', targetUser.bot ? 'Automated Application (Bot)' : 'Standard User Account', true)
             .addField('Network Status', `[${statusText}]`, true)
@@ -112,7 +108,7 @@ module.exports = {
         }
 
         card.setFooter(`Requested by ${interaction.user.tag}`);
-        await card.editReply(interaction);
+        await card.reply(interaction);
 
         logger.info(`Userinfo accessed for ${targetUser.tag} by ${interaction.user.tag}`);
     },

@@ -33,8 +33,6 @@ module.exports = {
     },
 
     async execute(interaction) {
-        await interaction.deferReply();
-
         const targetUser = interaction.options.getUser('user');
         const reason = interaction.options.getString('reason') || 'No reason provided';
         const silent = interaction.options.getBoolean('silent') || false;
@@ -45,47 +43,47 @@ module.exports = {
             return V2Templates.error(
                 'Permission Denied',
                 'You lack the required `Kick Members` permission to execute this command.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (!targetMember) {
             return V2Templates.error(
                 'Member Not Found',
                 `Target **${targetUser.tag}** (\`${targetUser.id}\`) is not currently present in this server.`
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (targetUser.id === interaction.user.id) {
             return V2Templates.error(
                 'Invalid Target',
                 'Self-targeting is prohibited. You cannot kick yourself.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (targetUser.id === interaction.client.user.id) {
             return V2Templates.error(
                 'Invalid Target',
                 'Action rejected. The bot cannot kick its own account.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (!targetMember.kickable) {
             return V2Templates.error(
                 'Hierarchy Restriction',
-                'Target cannot be kicked due to role hierarchy constraints or missing administrative permissions.'
-            ).editReply(interaction);
+                'Target cannot be kicked due to role hierarchy constraints.'
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (interaction.member.roles.highest.position <= targetMember.roles.highest.position) {
             return V2Templates.error(
                 'Hierarchy Restriction',
                 'Target possesses a role equal to or higher than your highest role.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         const { card: confirmCard, row: confirmRow } = V2Templates.confirmation({
             title: 'Confirm Kick Enforcement',
-            description: `Review the moderation parameters below and confirm removal for **${targetUser.tag}**.`,
+            description: `Review parameters below and confirm removal for **${targetUser.tag}**.`,
             fields: [
                 { name: 'Target Account', value: `${targetUser.tag} (\`${targetUser.id}\`)`, inline: true },
                 { name: 'Reason', value: reason, inline: true },
@@ -95,9 +93,9 @@ module.exports = {
             confirmStyle: ButtonStyle.Danger,
         });
 
-        const confirmMessage = await interaction.editReply({
+        const confirmMessage = await interaction.reply({
             ...confirmCard.toPayload(),
-            components: [confirmCard.buildContainer()]
+            fetchReply: true,
         });
 
         try {
@@ -153,7 +151,7 @@ module.exports = {
             await logToModChannel(interaction.guild, successCard);
             await successCard.editReply(buttonInteraction);
 
-            logger.info(`${interaction.user.tag} kicked ${targetUser.tag} from ${interaction.guild.name}. Reason: ${reason}`);
+            logger.info(`${interaction.user.tag} kicked ${targetUser.tag}. Reason: ${reason}`);
 
         } catch (error) {
             if (error.code === 'InteractionCollectorError') {

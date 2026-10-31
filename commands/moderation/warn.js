@@ -34,8 +34,6 @@ module.exports = {
     },
 
     async execute(interaction) {
-        await interaction.deferReply();
-
         const targetUser = interaction.options.getUser('user');
         const reason = interaction.options.getString('reason') || 'No reason provided';
         const silent = interaction.options.getBoolean('silent') || false;
@@ -46,35 +44,35 @@ module.exports = {
             return V2Templates.error(
                 'Permission Denied',
                 'You lack the required `Moderate Members` permission to execute this command.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (!targetMember) {
             return V2Templates.error(
                 'Member Not Found',
                 `Target **${targetUser.tag}** (\`${targetUser.id}\`) is not currently present in this server.`
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (targetUser.id === interaction.user.id) {
             return V2Templates.error(
                 'Invalid Target',
                 'Self-targeting is prohibited. You cannot warn yourself.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (targetUser.id === interaction.client.user.id) {
             return V2Templates.error(
                 'Invalid Target',
                 'Action rejected. The bot cannot warn its own account.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (interaction.member.roles.highest.position <= targetMember.roles.highest.position) {
             return V2Templates.error(
                 'Hierarchy Restriction',
                 'Target possesses a role equal to or higher than your highest role.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         let dmSent = false;
@@ -111,12 +109,12 @@ module.exports = {
             caseId: warning.caseId,
             dmSent,
             extraFields: [
-                { name: 'Total Warning Count', value: `${warningCount} / ${maxWarnings || 5}`, inline: true },
+                { name: 'Total Warnings', value: `${warningCount} / ${maxWarnings || 5}`, inline: true },
             ],
         });
 
         await logToModChannel(interaction.guild, card);
-        await card.editReply(interaction);
+        await card.reply(interaction);
 
         logger.info(`${interaction.user.tag} warned ${targetUser.tag} (Case #${warning.caseId}). Total: ${warningCount}`);
     },

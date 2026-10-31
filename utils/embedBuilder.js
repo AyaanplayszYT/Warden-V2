@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const colors = require('../config/colors.json');
 const emojis = require('../config/emojis.json');
 const { embedFooter } = require('../config/config.json');
@@ -88,25 +88,14 @@ class WardenEmbed {
         return this.embed;
     }
 
-    /**
-     * Converts this embed into a Discord Components V2 payload
-     */
-    toV2() {
-        const card = new V2Card()
-            .setAccent(this.embed.data.color || colors.primary);
-
-        if (this.embed.data.title) card.setTitle(this.embed.data.title);
-        if (this.embed.data.description) card.setDescription(this.embed.data.description);
-        if (this.embed.data.fields) card.addFields(this.embed.data.fields);
-        if (this.embed.data.footer) card.setFooter(this.embed.data.footer.text);
-
-        return card.toV2();
+    toPayload() {
+        return {
+            embeds: [this.embed],
+            components: []
+        };
     }
 }
 
-/**
- * Clean templates for embed outputs
- */
 const EmbedTemplates = {
     success(title, description) {
         return new WardenEmbed()
@@ -293,9 +282,6 @@ const EmbedTemplates = {
     },
 };
 
-/**
- * Clean confirmation dialog
- */
 const ConfirmationDialog = {
     create(options) {
         const {

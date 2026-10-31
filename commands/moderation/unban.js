@@ -26,8 +26,6 @@ module.exports = {
     },
 
     async execute(interaction) {
-        await interaction.deferReply();
-
         const userId = interaction.options.getString('user_id').trim();
         const reason = interaction.options.getString('reason') || 'No reason provided';
 
@@ -35,14 +33,14 @@ module.exports = {
             return V2Templates.error(
                 'Permission Denied',
                 'You lack the required `Ban Members` permission to execute this command.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (!/^\d{17,20}$/.test(userId)) {
             return V2Templates.error(
                 'Invalid User ID',
                 'The provided user ID format is invalid. Discord IDs must be numeric (17-20 digits).'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         try {
@@ -51,7 +49,7 @@ module.exports = {
                 return V2Templates.error(
                     'Ban Record Not Found',
                     `No active ban record exists for User ID \`${userId}\` in this guild.`
-                ).editReply(interaction);
+                ).reply(interaction, { ephemeral: true });
             }
 
             const targetUser = banEntry.user;
@@ -65,7 +63,7 @@ module.exports = {
             });
 
             await logToModChannel(interaction.guild, card);
-            await card.editReply(interaction);
+            await card.reply(interaction);
 
             logger.info(`${interaction.user.tag} unbanned ${targetUser.tag} (${userId}). Reason: ${reason}`);
 
@@ -74,7 +72,7 @@ module.exports = {
             return V2Templates.error(
                 'Execution Failure',
                 'An unexpected error occurred while attempting to revoke the ban.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
     },
 };

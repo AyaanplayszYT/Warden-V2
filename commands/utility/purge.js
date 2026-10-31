@@ -40,8 +40,6 @@ module.exports = {
     },
 
     async execute(interaction) {
-        await interaction.deferReply({ ephemeral: true });
-
         const amount = interaction.options.getInteger('amount');
         const targetUser = interaction.options.getUser('user');
         const botsOnly = interaction.options.getBoolean('bots_only') || false;
@@ -51,8 +49,10 @@ module.exports = {
             return V2Templates.error(
                 'Permission Denied',
                 'You lack the required `Manage Messages` permission to execute this command.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
+
+        await interaction.deferReply({ ephemeral: true });
 
         const channel = interaction.channel;
         const messages = await channel.messages.fetch({ limit: 100 });
@@ -79,7 +79,7 @@ module.exports = {
         if (toDelete.length === 0) {
             return V2Templates.warning(
                 'No Eligible Messages',
-                'No messages matched your specified criteria, or all matching messages are older than 14 days (Discord bulk delete limit).'
+                'No messages matched your specified criteria, or all matching messages are older than 14 days.'
             ).editReply(interaction);
         }
 
@@ -87,13 +87,10 @@ module.exports = {
             const deleted = await channel.bulkDelete(toDelete, true);
             const deletedCount = deleted.size;
 
-            // Log to purgeLogs.txt
             const logEntry = `[${new Date().toISOString()}] ${interaction.user.tag} purged ${deletedCount} message(s) in #${channel.name}\n`;
             try {
                 fs.appendFileSync(path.join(__dirname, '../../data/purgeLogs.txt'), logEntry);
-            } catch (err) {
-                logger.error('Failed to write to purge logs file:', err);
-            }
+            } catch (err) {}
 
             const card = new V2Card()
                 .setAccent('success')
@@ -106,9 +103,7 @@ module.exports = {
 
             await card.editReply(interaction);
 
-            // Forward to mod log channel
             await logToModChannel(interaction.guild, card);
-
             logger.info(`${interaction.user.tag} purged ${deletedCount} messages in #${channel.name}`);
 
         } catch (error) {

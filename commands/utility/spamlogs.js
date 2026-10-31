@@ -12,13 +12,11 @@ module.exports = {
     },
 
     async execute(interaction) {
-        await interaction.deferReply();
-
         if (!interaction.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
             return V2Templates.error(
                 'Permission Denied',
                 'You lack the required `Moderate Members` permission to view spam detection logs.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         const logs = spamLogs.getAll().slice(0, 15);
@@ -26,8 +24,8 @@ module.exports = {
         if (logs.length === 0) {
             return V2Templates.info(
                 'No Spam Incidents Recorded',
-                'The automated anti-spam filter has not detected any rate limit or mass-mention violations in recent memory.'
-            ).editReply(interaction);
+                'The automated anti-spam filter has not detected any violations in recent memory.'
+            ).reply(interaction);
         }
 
         const card = new V2Card()
@@ -44,7 +42,7 @@ module.exports = {
         }
 
         card.setFooter(`Anti-Spam Engine • Requested by ${interaction.user.tag}`);
-        await card.editReply(interaction);
+        await card.reply(interaction);
 
         logger.info(`Spamlogs accessed by ${interaction.user.tag}`);
     },

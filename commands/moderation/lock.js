@@ -25,8 +25,6 @@ module.exports = {
     },
 
     async execute(interaction) {
-        await interaction.deferReply();
-
         const channel = interaction.options.getChannel('channel') || interaction.channel;
         const reason = interaction.options.getString('reason') || 'No reason provided';
 
@@ -34,7 +32,7 @@ module.exports = {
             return V2Templates.error(
                 'Permission Denied',
                 'You lack the required `Manage Channels` permission to execute this command.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         const everyoneRole = interaction.guild.roles.everyone;
@@ -44,7 +42,7 @@ module.exports = {
             return V2Templates.warning(
                 'Channel Already Locked',
                 `Channel <#${channel.id}> is already locked.`
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         try {
@@ -60,9 +58,8 @@ module.exports = {
                 .addField('Reason', reason, true)
                 .setTimestamp(new Date());
 
-            await card.editReply(interaction);
+            await card.reply(interaction);
 
-            // Post notification inside the locked channel
             if (channel.id !== interaction.channel.id) {
                 const noticeCard = new V2Card()
                     .setAccent('warning')
@@ -80,7 +77,7 @@ module.exports = {
             return V2Templates.error(
                 'Execution Failure',
                 'Failed to update channel permission overrides.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
     },
 };

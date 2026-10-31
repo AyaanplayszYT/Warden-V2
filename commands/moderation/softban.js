@@ -44,8 +44,6 @@ module.exports = {
     },
 
     async execute(interaction) {
-        await interaction.deferReply();
-
         const targetUser = interaction.options.getUser('user');
         const reason = interaction.options.getString('reason') || 'No reason provided';
         const deleteMessageDays = interaction.options.getInteger('delete_messages') || 1;
@@ -57,21 +55,21 @@ module.exports = {
             return V2Templates.error(
                 'Permission Denied',
                 'You lack the required `Ban Members` permission to execute this command.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (targetUser.id === interaction.user.id) {
             return V2Templates.error(
                 'Invalid Target',
                 'Self-targeting is prohibited. You cannot softban yourself.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (targetUser.id === interaction.client.user.id) {
             return V2Templates.error(
                 'Invalid Target',
                 'Action rejected. The bot cannot softban its own account.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (targetMember) {
@@ -79,14 +77,14 @@ module.exports = {
                 return V2Templates.error(
                     'Hierarchy Restriction',
                     'Target cannot be softbanned due to role hierarchy constraints.'
-                ).editReply(interaction);
+                ).reply(interaction, { ephemeral: true });
             }
 
             if (interaction.member.roles.highest.position <= targetMember.roles.highest.position) {
                 return V2Templates.error(
                     'Hierarchy Restriction',
                     'Target possesses a role equal to or higher than your highest role.'
-                ).editReply(interaction);
+                ).reply(interaction, { ephemeral: true });
             }
         }
 
@@ -103,9 +101,9 @@ module.exports = {
             confirmStyle: ButtonStyle.Danger,
         });
 
-        const confirmMessage = await interaction.editReply({
+        const confirmMessage = await interaction.reply({
             ...confirmCard.toPayload(),
-            components: [confirmCard.buildContainer()]
+            fetchReply: true,
         });
 
         try {

@@ -10,11 +10,10 @@ module.exports = {
     },
 
     async execute(interaction) {
-        const sent = await interaction.deferReply({ fetchReply: true });
-
-        const calculateMetrics = (replyMsg, inter) => {
-            const roundtrip = replyMsg.createdTimestamp - inter.createdTimestamp;
-            const ws = Math.round(inter.client.ws.ping);
+        const calculateMetrics = (inter) => {
+            const now = Date.now();
+            const roundtrip = Math.max(1, now - inter.createdTimestamp);
+            const ws = Math.max(1, Math.round(inter.client.ws.ping));
 
             const getQuality = (ms) => {
                 if (ms < 100) return 'EXCELLENT';
@@ -35,7 +34,7 @@ module.exports = {
                 .setTitle('[TELEMETRY] Network Status & Latency')
                 .setDescription('Real-time operational latency indicators between Warden and Discord Gateway.')
                 .addField(
-                    'Roundtrip HTTP Latency',
+                    'Roundtrip Execution Latency',
                     `\`${roundtrip}ms\` [${getQuality(roundtrip)}]\n\`${createBar(roundtrip)}\``,
                     true
                 )
@@ -46,7 +45,7 @@ module.exports = {
                 )
                 .addField(
                     'Service Availability',
-                    ws < 200 ? 'Fully operational. No packet loss or degradation detected.' : 'Elevated network latency observed.',
+                    ws < 200 ? 'Fully operational. Zero packet loss detected.' : 'Elevated network latency observed.',
                     false
                 )
                 .setTimestamp(new Date());
@@ -62,15 +61,14 @@ module.exports = {
             return { card, roundtrip, ws };
         };
 
-        const { card, roundtrip, ws } = calculateMetrics(sent, interaction);
-        const replyMsg = await interaction.editReply({
+        const { card, roundtrip, ws } = calculateMetrics(interaction);
+        const replyMsg = await interaction.reply({
             ...card.toPayload(),
-            components: [card.buildContainer()]
+            fetchReply: true,
         });
 
         logger.info(`Ping used by ${interaction.user.tag} - HTTP: ${roundtrip}ms, WS: ${ws}ms`);
 
-        // Handle refresh button
         const collector = replyMsg.createMessageComponentCollector({
             componentType: ComponentType.Button,
             filter: i => i.user.id === interaction.user.id && i.customId === 'refresh_ping',
@@ -78,11 +76,8 @@ module.exports = {
         });
 
         collector.on('collect', async i => {
-            const updated = calculateMetrics(sent, interaction);
-            await i.update({
-                ...updated.card.toPayload(),
-                components: [updated.card.buildContainer()]
-            }).catch(() => {});
+            const updated = calculateMetrics(i);
+            await i.update(updated.card.toPayload()).catch(() => {});
         });
 
         collector.on('end', async () => {
@@ -93,12 +88,9 @@ module.exports = {
                     .setStyle(ButtonStyle.Secondary)
                     .setDisabled(true)
             );
-            const expiredCard = calculateMetrics(sent, interaction).card;
+            const expiredCard = calculateMetrics(interaction).card;
             expiredCard.actionRows = [disabledRow];
-            await interaction.editReply({
-                ...expiredCard.toPayload(),
-                components: [expiredCard.buildContainer()]
-            }).catch(() => {});
+            await interaction.editReply(expiredCard.toPayload()).catch(() => {});
         });
     },
 };

@@ -1,4 +1,4 @@
-const { PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
+const { PermissionFlagsBits, ButtonStyle, ComponentType } = require('discord.js');
 const { V2Templates } = require('../../utils/v2Components');
 const warningsDB = require('../../utils/warningsDB');
 const logger = require('../../utils/logger');
@@ -45,8 +45,6 @@ module.exports = {
     },
 
     async execute(interaction) {
-        await interaction.deferReply();
-
         const targetUser = interaction.options.getUser('user');
         const reason = interaction.options.getString('reason') || 'No reason provided';
         const deleteMessageDays = interaction.options.getInteger('delete_messages') || 0;
@@ -58,21 +56,21 @@ module.exports = {
             return V2Templates.error(
                 'Permission Denied',
                 'You lack the required `Ban Members` permission to execute this command.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (targetUser.id === interaction.user.id) {
             return V2Templates.error(
                 'Invalid Target',
                 'Self-targeting is prohibited. You cannot ban yourself.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (targetUser.id === interaction.client.user.id) {
             return V2Templates.error(
                 'Invalid Target',
                 'Action rejected. The bot cannot ban its own account.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         const existingBan = await interaction.guild.bans.fetch(targetUser.id).catch(() => null);
@@ -80,29 +78,29 @@ module.exports = {
             return V2Templates.error(
                 'Already Banned',
                 `Target **${targetUser.tag}** (\`${targetUser.id}\`) is already banned from this guild.`
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (targetMember) {
             if (!targetMember.bannable) {
                 return V2Templates.error(
                     'Hierarchy Restriction',
-                    'Target cannot be banned due to role hierarchy constraints or missing administrative permissions.'
-                ).editReply(interaction);
+                    'Target cannot be banned due to role hierarchy constraints.'
+                ).reply(interaction, { ephemeral: true });
             }
 
             if (interaction.member.roles.highest.position <= targetMember.roles.highest.position) {
                 return V2Templates.error(
                     'Hierarchy Restriction',
                     'Target possesses a role equal to or higher than your highest role.'
-                ).editReply(interaction);
+                ).reply(interaction, { ephemeral: true });
             }
         }
 
-        // Confirmation Dialog
+        // Instant Confirmation Dialog
         const { card: confirmCard, row: confirmRow } = V2Templates.confirmation({
             title: 'Confirm Ban Enforcement',
-            description: `Review the moderation parameters below and confirm permanent exclusion for **${targetUser.tag}**.`,
+            description: `Review parameters below and confirm permanent exclusion for **${targetUser.tag}**.`,
             fields: [
                 { name: 'Target Account', value: `${targetUser.tag} (\`${targetUser.id}\`)`, inline: true },
                 { name: 'Reason', value: reason, inline: true },
@@ -113,9 +111,9 @@ module.exports = {
             confirmStyle: ButtonStyle.Danger,
         });
 
-        const confirmMessage = await interaction.editReply({
+        const confirmMessage = await interaction.reply({
             ...confirmCard.toPayload(),
-            components: [confirmCard.buildContainer()]
+            fetchReply: true,
         });
 
         try {
@@ -174,7 +172,7 @@ module.exports = {
             await logToModChannel(interaction.guild, successCard);
             await successCard.editReply(buttonInteraction);
 
-            logger.info(`${interaction.user.tag} banned ${targetUser.tag} from ${interaction.guild.name}. Reason: ${reason}`);
+            logger.info(`${interaction.user.tag} banned ${targetUser.tag}. Reason: ${reason}`);
 
         } catch (error) {
             if (error.code === 'InteractionCollectorError') {

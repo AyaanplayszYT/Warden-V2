@@ -17,8 +17,6 @@ module.exports = {
     },
 
     async execute(interaction) {
-        await interaction.deferReply();
-
         const emojiInput = interaction.options.getString('emoji').trim();
         const parsed = parseEmoji(emojiInput);
 
@@ -26,13 +24,12 @@ module.exports = {
             return V2Templates.error(
                 'Invalid Emoji',
                 'Please supply a custom Discord emoji (e.g. `<:name:1234567890>`). Standard Unicode emojis do not have guild asset metadata.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         const extension = parsed.animated ? 'gif' : 'png';
         const emojiURL = `https://cdn.discordapp.com/emojis/${parsed.id}.${extension}?size=4096`;
 
-        // Check if emoji belongs to current guild
         const guildEmoji = interaction.guild.emojis.cache.get(parsed.id);
 
         const card = new V2Card()
@@ -43,7 +40,7 @@ module.exports = {
             .addField('Origin Guild', guildEmoji ? 'Local (This Server)' : 'External Server', true);
 
         if (guildEmoji) {
-            const author = await guildEmoji.fetchAuthor().catch(() => null);
+            const author = guildEmoji.author || await guildEmoji.fetchAuthor().catch(() => null);
             if (author) {
                 card.addField('Uploaded By', `${author.tag} (\`${author.id}\`)`, true);
             }
@@ -62,7 +59,7 @@ module.exports = {
         card.addActionRow(row);
         card.setFooter(`Requested by ${interaction.user.tag}`);
 
-        await card.editReply(interaction);
+        await card.reply(interaction);
         logger.info(`Emojiinfo fetched for ${parsed.name} (${parsed.id}) by ${interaction.user.tag}`);
     },
 };

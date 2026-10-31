@@ -26,8 +26,6 @@ module.exports = {
     },
 
     async execute(interaction) {
-        await interaction.deferReply();
-
         const targetUser = interaction.options.getUser('user');
         const reason = interaction.options.getString('reason') || 'No reason provided';
 
@@ -37,21 +35,21 @@ module.exports = {
             return V2Templates.error(
                 'Permission Denied',
                 'You lack the required `Moderate Members` permission to execute this command.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (!targetMember) {
             return V2Templates.error(
                 'Member Not Found',
                 `Target **${targetUser.tag}** (\`${targetUser.id}\`) is not currently present in this server.`
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (!targetMember.communicationDisabledUntilTimestamp || targetMember.communicationDisabledUntilTimestamp <= Date.now()) {
             return V2Templates.warning(
                 'Not Timed Out',
                 `Target **${targetUser.tag}** has no active timeout restrictions.`
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         try {
@@ -65,7 +63,7 @@ module.exports = {
             });
 
             await logToModChannel(interaction.guild, card);
-            await card.editReply(interaction);
+            await card.reply(interaction);
 
             logger.info(`${interaction.user.tag} unmuted ${targetUser.tag}. Reason: ${reason}`);
 
@@ -74,7 +72,7 @@ module.exports = {
             return V2Templates.error(
                 'Execution Failure',
                 'An unexpected error occurred while attempting to remove timeout.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
     },
 };

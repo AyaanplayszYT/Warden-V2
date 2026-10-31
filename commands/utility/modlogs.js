@@ -1,4 +1,4 @@
-const { PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
+const { PermissionFlagsBits } = require('discord.js');
 const { V2Card, V2Templates } = require('../../utils/v2Components');
 const warningsDB = require('../../utils/warningsDB');
 const logger = require('../../utils/logger');
@@ -40,13 +40,11 @@ module.exports = {
     },
 
     async execute(interaction) {
-        await interaction.deferReply();
-
         if (!interaction.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
             return V2Templates.error(
                 'Permission Denied',
                 'You lack the required `Moderate Members` permission to inspect moderation logs.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         const limit = interaction.options.getInteger('limit') || 10;
@@ -65,7 +63,7 @@ module.exports = {
                 filterUser
                     ? `No moderation actions recorded for **${filterUser.tag}** (\`${filterUser.id}\`).`
                     : 'No moderation records found in this server\'s audit database.'
-            ).editReply(interaction);
+            ).reply(interaction);
         }
 
         const logsToShow = filtered.slice(0, limit);
@@ -87,7 +85,7 @@ module.exports = {
         });
 
         card.setFooter(`Guild Audit Registry • Requested by ${interaction.user.tag}`);
-        await card.editReply(interaction);
+        await card.reply(interaction);
 
         logger.info(`Modlogs viewed by ${interaction.user.tag} (count: ${logsToShow.length})`);
     },

@@ -32,8 +32,6 @@ module.exports = {
     },
 
     async execute(interaction) {
-        await interaction.deferReply();
-
         const input = interaction.options.getString('seconds').trim();
         const channel = interaction.options.getChannel('channel') || interaction.channel;
         const reason = interaction.options.getString('reason') || 'No reason provided';
@@ -42,7 +40,7 @@ module.exports = {
             return V2Templates.error(
                 'Permission Denied',
                 'You lack the required `Manage Channels` permission to execute this command.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         let seconds;
@@ -59,7 +57,7 @@ module.exports = {
             return V2Templates.error(
                 'Invalid Rate Limit',
                 'Slowmode delay must be between `0` (disabled) and `21600` seconds (6 hours). Example values: `0`, `5s`, `10m`, `1h`.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         try {
@@ -78,7 +76,7 @@ module.exports = {
                 .addField('Reason', reason, false)
                 .setTimestamp(new Date());
 
-            await card.editReply(interaction);
+            await card.reply(interaction);
 
             logger.info(`${interaction.user.tag} set slowmode to ${seconds}s in #${channel.name}`);
 
@@ -87,7 +85,7 @@ module.exports = {
             return V2Templates.error(
                 'Execution Failure',
                 'Failed to update channel rate limit settings.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
     },
 };

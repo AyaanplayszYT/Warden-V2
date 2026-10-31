@@ -50,7 +50,6 @@ module.exports = {
     },
 
     async showMainHelp(interaction) {
-        await interaction.deferReply();
         const commands = interaction.client.commands;
 
         const categorized = {
@@ -116,9 +115,9 @@ module.exports = {
         const selectRow = new ActionRowBuilder().addComponents(selectMenu);
         mainCard.addActionRow(selectRow);
 
-        const replyMsg = await interaction.editReply({
+        const replyMsg = await interaction.reply({
             ...mainCard.toPayload(),
-            components: [mainCard.buildContainer()]
+            fetchReply: true,
         });
 
         const collector = replyMsg.createMessageComponentCollector({
@@ -147,31 +146,24 @@ module.exports = {
 
             catCard.addActionRow(selectRow);
 
-            await i.update({
-                ...catCard.toPayload(),
-                components: [catCard.buildContainer()]
-            }).catch(() => {});
+            await i.update(catCard.toPayload()).catch(() => {});
         });
 
         collector.on('end', async () => {
             selectMenu.setDisabled(true);
             mainCard.actionRows = [new ActionRowBuilder().addComponents(selectMenu)];
-            await interaction.editReply({
-                ...mainCard.toPayload(),
-                components: [mainCard.buildContainer()]
-            }).catch(() => {});
+            await interaction.editReply(mainCard.toPayload()).catch(() => {});
         });
     },
 
     async showCommandHelp(interaction, commandName) {
-        await interaction.deferReply();
         const command = interaction.client.commands.get(commandName.toLowerCase());
 
         if (!command) {
             return V2Templates.error(
                 'Command Not Found',
                 `No command matching \`/${commandName}\` is registered in the command directory.\nRun \`/help\` to inspect available commands.`
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         const cmdData = command.data;
@@ -196,7 +188,6 @@ module.exports = {
             card.addField('Access Clearance', '`Public Access`', true);
         }
 
-        // Subcommands or options
         if (cmdData.options && cmdData.options.length > 0) {
             const optionsList = cmdData.options.map(opt => {
                 const reqBadge = opt.required ? '[REQUIRED]' : '[OPTIONAL]';
@@ -208,6 +199,6 @@ module.exports = {
         }
 
         card.setFooter(`Warden Command Specification • /${cmdData.name}`);
-        return card.editReply(interaction);
+        return card.reply(interaction);
     },
 };

@@ -71,7 +71,6 @@ module.exports = {
     },
 
     async listWarnings(interaction) {
-        await interaction.deferReply();
         const targetUser = interaction.options.getUser('user');
         const warnings = warningsDB.get(interaction.guild.id, targetUser.id);
 
@@ -79,7 +78,7 @@ module.exports = {
             return V2Templates.info(
                 'No Warnings on Record',
                 `Target **${targetUser.tag}** (\`${targetUser.id}\`) has zero recorded warnings in this server.`
-            ).editReply(interaction);
+            ).reply(interaction);
         }
 
         const warningsPerPage = 5;
@@ -88,7 +87,6 @@ module.exports = {
 
         for (let i = 0; i < warnings.length; i += warningsPerPage) {
             const pageWarnings = warnings.slice(i, i + warningsPerPage);
-            const pageIndex = Math.floor(i / warningsPerPage);
 
             const card = new V2Card()
                 .setAccent('info')
@@ -107,7 +105,7 @@ module.exports = {
         }
 
         if (pages.length === 1) {
-            return pages[0].editReply(interaction);
+            return pages[0].reply(interaction);
         }
 
         let currentPage = 0;
@@ -143,9 +141,9 @@ module.exports = {
         const currentCard = pages[0];
         currentCard.actionRows = [makeRow(0)];
 
-        const replyMessage = await interaction.editReply({
+        const replyMessage = await interaction.reply({
             ...currentCard.toPayload(),
-            components: [currentCard.buildContainer()]
+            fetchReply: true,
         });
 
         const collector = replyMessage.createMessageComponentCollector({
@@ -163,55 +161,45 @@ module.exports = {
             const pageCard = pages[currentPage];
             pageCard.actionRows = [makeRow(currentPage)];
 
-            await i.update({
-                ...pageCard.toPayload(),
-                components: [pageCard.buildContainer()]
-            }).catch(() => {});
+            await i.update(pageCard.toPayload()).catch(() => {});
         });
 
         collector.on('end', async () => {
             const finalCard = pages[currentPage];
             finalCard.actionRows = [];
-            await interaction.editReply({
-                ...finalCard.toPayload(),
-                components: [finalCard.buildContainer()]
-            }).catch(() => {});
+            await interaction.editReply(finalCard.toPayload()).catch(() => {});
         });
     },
 
     async clearWarnings(interaction) {
-        await interaction.deferReply();
         const targetUser = interaction.options.getUser('user');
-
         const success = warningsDB.clear(interaction.guild.id, targetUser.id);
         if (!success) {
             return V2Templates.info(
                 'No Warnings to Clear',
                 `Target **${targetUser.tag}** had no recorded warnings.`
-            ).editReply(interaction);
+            ).reply(interaction);
         }
 
         return V2Templates.success(
             'Warnings Cleared',
             `All warning entries for **${targetUser.tag}** have been expunged from the database.`
-        ).editReply(interaction);
+        ).reply(interaction);
     },
 
     async removeWarning(interaction) {
-        await interaction.deferReply();
         const caseId = interaction.options.getInteger('case_id');
-
         const success = warningsDB.removeByCaseId(interaction.guild.id, caseId);
         if (!success) {
             return V2Templates.error(
                 'Case Not Found',
                 `Warning with Case ID \`#${caseId}\` was not found in this guild's database.`
-            ).editReply(interaction);
+            ).reply(interaction);
         }
 
         return V2Templates.success(
             'Warning Removed',
             `Warning Case ID \`#${caseId}\` has been permanently deleted.`
-        ).editReply(interaction);
+        ).reply(interaction);
     },
 };

@@ -12,10 +12,10 @@ module.exports = {
             const command = client.commands.get(interaction.commandName);
 
             if (!command) {
-                logger.warn(`Unknown command invocation attempt: /${interaction.commandName}`);
+                logger.warn(`Unknown command: /${interaction.commandName}`);
                 return V2Templates.error(
                     'Command Not Found',
-                    'The requested command is not registered or has been removed from this bot.'
+                    'The requested command is not registered or has been removed.'
                 ).reply(interaction, { ephemeral: true });
             }
 
@@ -25,15 +25,17 @@ module.exports = {
                 logger.error(`Error executing /${interaction.commandName}:`, error);
 
                 const errorCard = V2Templates.error(
-                    'Internal Command Error',
-                    'An unexpected exception occurred while processing this command. Please notify an administrator.'
+                    'Execution Error',
+                    'An unexpected exception occurred while processing this command.'
                 );
 
-                if (interaction.replied || interaction.deferred) {
-                    await errorCard.followUp(interaction, { ephemeral: true }).catch(() => {});
-                } else {
-                    await errorCard.reply(interaction, { ephemeral: true }).catch(() => {});
-                }
+                try {
+                    if (interaction.replied || interaction.deferred) {
+                        await errorCard.followUp(interaction, { ephemeral: true });
+                    } else {
+                        await errorCard.reply(interaction, { ephemeral: true });
+                    }
+                } catch (e) {}
             }
         }
 
@@ -45,7 +47,7 @@ module.exports = {
             try {
                 await command.autocomplete(interaction, client);
             } catch (error) {
-                logger.error(`Error during autocomplete for /${interaction.commandName}:`, error);
+                logger.error(`Error in autocomplete for /${interaction.commandName}:`, error);
             }
         }
 

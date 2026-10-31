@@ -10,10 +10,8 @@ module.exports = {
     },
 
     async execute(interaction) {
-        await interaction.deferReply();
-
         const guild = interaction.guild;
-        const owner = await guild.fetchOwner().catch(() => null);
+        const owner = guild.members.cache.get(guild.ownerId) || await guild.fetchOwner().catch(() => null);
 
         const textChannels = guild.channels.cache.filter(c => c.type === ChannelType.GuildText).size;
         const voiceChannels = guild.channels.cache.filter(c => c.type === ChannelType.GuildVoice).size;
@@ -23,7 +21,7 @@ module.exports = {
 
         const memberCount = guild.memberCount;
         const botCount = guild.members.cache.filter(m => m.user.bot).size;
-        const humanCount = memberCount - botCount;
+        const humanCount = Math.max(0, memberCount - botCount);
 
         const roleCount = guild.roles.cache.size - 1;
         const emojiCount = guild.emojis.cache.size;
@@ -61,7 +59,7 @@ module.exports = {
             .setAccent('primary')
             .setTitle(`[SERVER TELEMETRY] ${guild.name}`, `Guild Identifier: \`${guild.id}\``)
             .setDescription(guild.description || '*No guild description defined.*')
-            .addField('Guild Owner', owner ? `${owner.user.tag} (\`${owner.id}\`)` : 'Unknown', true)
+            .addField('Guild Owner', owner ? `${owner.user?.tag || owner.tag || 'Owner'} (\`${guild.ownerId}\`)` : 'Unknown', true)
             .addField('Creation Date', `<t:${Math.floor(guild.createdTimestamp / 1000)}:F> (<t:${Math.floor(guild.createdTimestamp / 1000)}:R>)`, true)
             .addField('Boost Tier Status', `Level ${boostLevel} (${boostCount} active boost subscriptions)`, true)
             .addField(
@@ -87,7 +85,7 @@ module.exports = {
             .addField('Guild Enabled Features', features, false)
             .setFooter(`Requested by ${interaction.user.tag}`);
 
-        await card.editReply(interaction);
+        await card.reply(interaction);
         logger.info(`Serverinfo accessed for ${guild.name} by ${interaction.user.tag}`);
     },
 };

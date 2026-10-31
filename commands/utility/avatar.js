@@ -23,11 +23,9 @@ module.exports = {
     },
 
     async execute(interaction) {
-        await interaction.deferReply();
-
         const targetUser = interaction.options.getUser('user') || interaction.user;
         const wantServerAvatar = interaction.options.getBoolean('server_avatar') || false;
-        const member = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
+        const member = interaction.guild.members.cache.get(targetUser.id) || await interaction.guild.members.fetch(targetUser.id).catch(() => null);
 
         let avatarURL;
         let avatarType = 'Global Account Avatar';
@@ -66,7 +64,7 @@ module.exports = {
         );
 
         card.addActionRow(row);
-        await card.editReply(interaction);
+        await card.reply(interaction);
 
         logger.info(`Avatar fetched for ${targetUser.tag} by ${interaction.user.tag}`);
     },

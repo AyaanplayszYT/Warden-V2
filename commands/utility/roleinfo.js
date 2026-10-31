@@ -17,11 +17,9 @@ module.exports = {
     },
 
     async execute(interaction) {
-        await interaction.deferReply();
-
         const role = interaction.options.getRole('role');
         if (!role) {
-            return V2Templates.error('Invalid Role', 'The requested role could not be resolved.').editReply(interaction);
+            return V2Templates.error('Invalid Role', 'The requested role could not be resolved.').reply(interaction, { ephemeral: true });
         }
 
         const memberCount = role.members.size;
@@ -64,7 +62,7 @@ module.exports = {
         }
 
         card.setFooter(`Requested by ${interaction.user.tag}`);
-        await card.editReply(interaction);
+        await card.reply(interaction);
 
         logger.info(`Roleinfo accessed for ${role.name} by ${interaction.user.tag}`);
     },

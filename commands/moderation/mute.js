@@ -6,7 +6,7 @@ const ms = require('ms');
 const fs = require('fs');
 const path = require('path');
 
-const MAX_TIMEOUT_MS = 28 * 24 * 60 * 60 * 1000; // Discord limit: 28 days
+const MAX_TIMEOUT_MS = 28 * 24 * 60 * 60 * 1000; // 28 days
 
 module.exports = {
     data: {
@@ -42,8 +42,6 @@ module.exports = {
     },
 
     async execute(interaction) {
-        await interaction.deferReply();
-
         const targetUser = interaction.options.getUser('user');
         const durationInput = interaction.options.getString('duration');
         const reason = interaction.options.getString('reason') || 'No reason provided';
@@ -55,42 +53,42 @@ module.exports = {
             return V2Templates.error(
                 'Permission Denied',
                 'You lack the required `Moderate Members` permission to execute this command.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (!targetMember) {
             return V2Templates.error(
                 'Member Not Found',
                 `Target **${targetUser.tag}** (\`${targetUser.id}\`) is not currently present in this server.`
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (targetUser.id === interaction.user.id) {
             return V2Templates.error(
                 'Invalid Target',
                 'Self-targeting is prohibited. You cannot timeout yourself.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (targetUser.id === interaction.client.user.id) {
             return V2Templates.error(
                 'Invalid Target',
                 'Action rejected. The bot cannot timeout its own account.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (!targetMember.moderatable) {
             return V2Templates.error(
                 'Hierarchy Restriction',
-                'Target cannot be timed out due to role hierarchy constraints or missing administrative permissions.'
-            ).editReply(interaction);
+                'Target cannot be timed out due to role hierarchy constraints.'
+            ).reply(interaction, { ephemeral: true });
         }
 
         if (interaction.member.roles.highest.position <= targetMember.roles.highest.position) {
             return V2Templates.error(
                 'Hierarchy Restriction',
                 'Target possesses a role equal to or higher than your highest role.'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         let durationMs;
@@ -104,12 +102,12 @@ module.exports = {
             return V2Templates.error(
                 'Invalid Duration',
                 'Duration must be between 5 seconds and 28 days (e.g. `10m`, `2h`, `1d`).'
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
         const formattedDuration = ms(durationMs, { long: true });
 
-        // Confirmation dialog
+        // Instant Confirmation dialog
         const { card: confirmCard, row: confirmRow } = V2Templates.confirmation({
             title: 'Confirm Timeout Enforcement',
             description: `Review parameters below and confirm temporary communication restriction for **${targetUser.tag}**.`,
@@ -123,9 +121,9 @@ module.exports = {
             confirmStyle: ButtonStyle.Danger,
         });
 
-        const confirmMessage = await interaction.editReply({
+        const confirmMessage = await interaction.reply({
             ...confirmCard.toPayload(),
-            components: [confirmCard.buildContainer()]
+            fetchReply: true,
         });
 
         try {

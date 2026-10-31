@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+const { PermissionFlagsBits, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 const { V2Card, V2Templates } = require('../../utils/v2Components');
 const logger = require('../../utils/logger');
 const fs = require('fs');
@@ -36,8 +36,6 @@ module.exports = {
             ).reply(interaction, { ephemeral: true });
         }
 
-        await interaction.deferReply({ ephemeral: true });
-
         const channel = interaction.options.getChannel('channel') || interaction.channel;
         const guild = interaction.guild;
 
@@ -46,10 +44,9 @@ module.exports = {
             return V2Templates.error(
                 'Missing Permissions',
                 `Warden lacks permission to send messages in <#${channel.id}>.`
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
 
-        // Provision roles if missing
         const createdRoleIds = {};
         for (const roleData of COLOR_ROLES) {
             let role = guild.roles.cache.find(r => r.name === roleData.name);
@@ -66,16 +63,15 @@ module.exports = {
                     return V2Templates.error(
                         'Role Provisioning Failed',
                         `Failed to create role \`${roleData.name}\`: ${err.message}`
-                    ).editReply(interaction);
+                    ).reply(interaction, { ephemeral: true });
                 }
             }
             createdRoleIds[roleData.name] = role.id;
         }
 
-        // Build Discord Components V2 Selector Card
         const selectMenu = new StringSelectMenuBuilder()
             .setCustomId('color_role_select')
-            .setPlaceholder('Select your preferred vanity color profile...')
+            .setPlaceholder('Select your vanity color profile...')
             .addOptions([
                 ...COLOR_ROLES.map(r => ({
                     label: r.name,
@@ -103,32 +99,28 @@ module.exports = {
 
         card.addActionRow(row);
 
-        let sentMsg;
         try {
-            sentMsg = await channel.send({
-                ...card.toPayload(),
-                components: [card.buildContainer()]
-            });
+            const sentMsg = await channel.send(card.toPayload());
+
+            const dataPath = path.join(__dirname, '../../data/colorRoles.json');
+            const saveData = {
+                messageId: sentMsg.id,
+                channelId: channel.id,
+                guildId: guild.id,
+                roles: COLOR_ROLES.map(r => ({ name: r.name, id: createdRoleIds[r.name] || '' })),
+            };
+            fs.writeFileSync(dataPath, JSON.stringify(saveData, null, 2));
+
+            return V2Templates.success(
+                'Color System Deployed',
+                `Color roles verified and interactive selector deployed to <#${channel.id}>.`
+            ).reply(interaction, { ephemeral: true });
+
         } catch (err) {
             return V2Templates.error(
                 'Dispatch Failed',
                 `Failed to send component message to <#${channel.id}>: ${err.message}`
-            ).editReply(interaction);
+            ).reply(interaction, { ephemeral: true });
         }
-
-        // Save mapping to data/colorRoles.json
-        const dataPath = path.join(__dirname, '../../data/colorRoles.json');
-        const saveData = {
-            messageId: sentMsg.id,
-            channelId: channel.id,
-            guildId: guild.id,
-            roles: COLOR_ROLES.map(r => ({ name: r.name, id: createdRoleIds[r.name] || '' })),
-        };
-        fs.writeFileSync(dataPath, JSON.stringify(saveData, null, 2));
-
-        return V2Templates.success(
-            'Color System Deployed',
-            `Color roles verified and interactive selector deployed to <#${channel.id}>.`
-        ).editReply(interaction);
     },
 };
