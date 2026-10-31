@@ -2,11 +2,11 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, Collection } = require('discord.js');
 const { prefix } = require('./config/config.json');
 const logger = require('./utils/logger');
 
-// Create a new client instance
+// Create a new client instance optimized for low latency & memory efficiency
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -15,7 +15,13 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessageReactions
     ],
-    partials: ["message", "channel", "reaction"]
+    partials: [Partials.Message, Partials.Channel, Partials.Reaction],
+    sweepers: {
+        messages: {
+            interval: 300, // Sweep messages every 5 minutes
+            lifetime: 900,  // Free RAM for messages older than 15 minutes
+        },
+    },
 });
 
 // Command handling

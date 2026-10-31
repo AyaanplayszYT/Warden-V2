@@ -1,8 +1,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 const { UI } = require('../../utils/embedBuilder');
+const channelConfig = require('../../utils/channelConfig');
 const logger = require('../../utils/logger');
-const fs = require('fs');
-const path = require('path');
 
 module.exports = {
     name: 'setmodlog',
@@ -38,22 +37,8 @@ module.exports = {
         const channel = interaction.options.getChannel('channel') || interaction.channel;
         const disable = interaction.options.getBoolean('disable') || false;
 
-        const dataDir = path.join(__dirname, '../../data');
-        if (!fs.existsSync(dataDir)) {
-            fs.mkdirSync(dataDir, { recursive: true });
-        }
-
-        const filePath = path.join(dataDir, 'logChannels.json');
-        let logChannels = { modLog: '', spamLog: '' };
-        try {
-            if (fs.existsSync(filePath)) {
-                logChannels = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-            }
-        } catch (e) {}
-
         if (disable) {
-            logChannels.modLog = '';
-            fs.writeFileSync(filePath, JSON.stringify(logChannels, null, 2));
+            await channelConfig.setModLog('');
 
             return interaction.reply({
                 embeds: [UI.warning('Logging Disabled', 'Moderation audit logging has been deactivated.')],
@@ -61,8 +46,7 @@ module.exports = {
             });
         }
 
-        logChannels.modLog = channel.id;
-        fs.writeFileSync(filePath, JSON.stringify(logChannels, null, 2));
+        await channelConfig.setModLog(channel.id);
 
         await interaction.reply({
             embeds: [

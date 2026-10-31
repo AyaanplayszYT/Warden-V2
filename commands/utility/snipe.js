@@ -1,5 +1,6 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { UI } = require('../../utils/embedBuilder');
+const ignoreManager = require('../../utils/ignoreManager');
 const logger = require('../../utils/logger');
 
 const snipeCache = new Map();
@@ -109,6 +110,7 @@ module.exports = {
 
     addDeletedMessage(channelId, message) {
         if (!channelId || !message || message.author?.bot) return;
+        if (ignoreManager.isChannelIgnored(channelId) || ignoreManager.isUserIgnored(message.author.id)) return;
 
         let channelSnipes = snipeCache.get(channelId) || [];
         const attachments = message.attachments ? Array.from(message.attachments.values()).map(a => a.url) : [];
@@ -132,6 +134,7 @@ module.exports = {
 
     addEditedMessage(channelId, oldMessage, newMessage) {
         if (!channelId || !oldMessage || !newMessage || oldMessage.author?.bot) return;
+        if (ignoreManager.isChannelIgnored(channelId) || ignoreManager.isUserIgnored(oldMessage.author.id)) return;
 
         let channelSnipes = editSnipeCache.get(channelId) || [];
         const attachments = newMessage.attachments ? Array.from(newMessage.attachments.values()).map(a => a.url) : [];

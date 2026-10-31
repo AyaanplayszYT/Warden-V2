@@ -1,33 +1,26 @@
 const { Events } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
 const logger = require('../utils/logger');
-const { V2Card } = require('../utils/v2Components');
+const { UI } = require('../utils/embedBuilder');
+const channelConfig = require('../utils/channelConfig');
 
 module.exports = {
     name: Events.ChannelUpdate,
     async execute(oldChannel, newChannel, client) {
-        let modLogChannelId = '';
-        try {
-            const logChannels = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/logChannels.json'), 'utf8'));
-            modLogChannelId = logChannels.modLog;
-        } catch (e) {}
-
+        const modLogChannelId = channelConfig.getModLog();
         const guild = newChannel.guild || (newChannel.parent && newChannel.parent.guild);
+
         if (modLogChannelId && guild) {
             const modLogChannel = guild.channels.cache.get(modLogChannelId);
             if (modLogChannel) {
-                const card = new V2Card()
-                    .setAccent('warning')
-                    .setTitle('[AUDIT LOG] Channel Updated')
-                    .addField('Channel Identifier', `\`${newChannel.id}\``, true)
-                    .addField('Name (Before)', `#${oldChannel.name}`, true)
-                    .addField('Name (After)', `#${newChannel.name}`, true)
-                    .setTimestamp(new Date());
+                const embed = UI.embed()
+                    .color('warning')
+                    .title('Channel Updated')
+                    .field('Channel Identifier', `\`${newChannel.id}\``, true)
+                    .field('Name (Before)', `#${oldChannel.name}`, true)
+                    .field('Name (After)', `#${newChannel.name}`, true);
 
-                await card.send(modLogChannel);
+                await modLogChannel.send({ embeds: [embed.build()] }).catch(() => {});
             }
         }
-        logger.info(`Channel updated: #${oldChannel.name} -> #${newChannel.name} (${newChannel.id})`);
     },
 };

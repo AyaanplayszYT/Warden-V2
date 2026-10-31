@@ -1,6 +1,7 @@
 const { Events, Collection, PermissionFlagsBits } = require('discord.js');
 const { prefix, ownerId } = require('../config/config.json');
 const { UI } = require('../utils/embedBuilder');
+const channelConfig = require('../utils/channelConfig');
 const logger = require('../utils/logger');
 const fs = require('fs');
 const path = require('path');
@@ -39,22 +40,19 @@ module.exports = {
 
                 // Send audit card to mod log channel
                 try {
-                    const logChannelsPath = path.join(__dirname, '../data/logChannels.json');
-                    if (fs.existsSync(logChannelsPath)) {
-                        const logChannels = JSON.parse(fs.readFileSync(logChannelsPath, 'utf8'));
-                        if (logChannels.modLog) {
-                            const modLogChannel = message.guild.channels.cache.get(logChannels.modLog);
-                            if (modLogChannel) {
-                                const auditCard = UI.embed()
-                                    .color('error')
-                                    .title('Unauthorized Mass Mention')
-                                    .desc(`User ${message.author} (\`${message.author.tag}\`) attempted a restricted broadcast mention.`)
-                                    .field('Target Channel', `<#${message.channel.id}>`, true)
-                                    .field('Action', '10 Minute Timeout', true)
-                                    .field('Content', `\`${message.content.substring(0, 500)}\``, false);
+                    const modLogChannelId = channelConfig.getModLog();
+                    if (modLogChannelId) {
+                        const modLogChannel = message.guild.channels.cache.get(modLogChannelId);
+                        if (modLogChannel) {
+                            const auditCard = UI.embed()
+                                .color('error')
+                                .title('Unauthorized Mass Mention')
+                                .desc(`User ${message.author} (\`${message.author.tag}\`) attempted a restricted broadcast mention.`)
+                                .field('Target Channel', `<#${message.channel.id}>`, true)
+                                .field('Action', '10 Minute Timeout', true)
+                                .field('Content', `\`${message.content.substring(0, 500)}\``, false);
 
-                                await modLogChannel.send({ embeds: [auditCard.build()] });
-                            }
+                            await modLogChannel.send({ embeds: [auditCard.build()] }).catch(() => {});
                         }
                     }
                 } catch (e) {}

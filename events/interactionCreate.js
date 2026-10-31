@@ -4,6 +4,24 @@ const { UI } = require('../utils/embedBuilder');
 const fs = require('fs');
 const path = require('path');
 
+let cachedColorData = null;
+let lastColorRead = 0;
+function getColorData() {
+    const now = Date.now();
+    if (!cachedColorData || now - lastColorRead > 60000) {
+        lastColorRead = now;
+        try {
+            const dataPath = path.join(__dirname, '../data/colorRoles.json');
+            if (fs.existsSync(dataPath)) {
+                cachedColorData = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+            }
+        } catch (e) {
+            cachedColorData = null;
+        }
+    }
+    return cachedColorData;
+}
+
 module.exports = {
     name: Events.InteractionCreate,
     async execute(interaction, client) {
@@ -57,13 +75,7 @@ module.exports = {
                 const selected = interaction.values[0];
                 const member = interaction.member;
 
-                const dataPath = path.join(__dirname, '../data/colorRoles.json');
-                let colorData = null;
-                try {
-                    if (fs.existsSync(dataPath)) {
-                        colorData = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
-                    }
-                } catch (e) {}
+                const colorData = getColorData();
 
                 if (!colorData || !colorData.roles) {
                     return interaction.reply({

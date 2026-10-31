@@ -20,8 +20,8 @@ const CATEGORIES = {
     },
     config: {
         name: 'Configuration',
-        description: 'Log routing and color configuration',
-        commands: ['setmodlog', 'setspamlog', 'setupcolors', 'modlogs', 'spamlogs'],
+        description: 'Log routing, ignore lists, and color setup',
+        commands: ['ignore', 'setmodlog', 'setspamlog', 'setupcolors', 'modlogs', 'spamlogs'],
     },
 };
 
@@ -68,7 +68,7 @@ module.exports = {
             .field('Moderation', '12 commands • Ban, kick, mute, warn, purge, lock...', false)
             .field('Utility', '5 commands • Polls, reminders, snipes, latency...', false)
             .field('Intelligence', '5 commands • Userinfo, serverinfo, roles, avatars...', false)
-            .field('Configuration', '5 commands • Log routing and vanity color roles...', false)
+            .field('Configuration', '6 commands • Ignore lists, log routing, color roles...', false)
             .build();
 
         const select = new StringSelectMenuBuilder()
