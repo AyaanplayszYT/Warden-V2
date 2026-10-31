@@ -1,9 +1,11 @@
 const { Events, Collection, PermissionFlagsBits } = require('discord.js');
 const { prefix, ownerId } = require('../config/config.json');
-const { V2Card } = require('../utils/v2Components');
+const { UI } = require('../utils/embedBuilder');
 const logger = require('../utils/logger');
 const fs = require('fs');
 const path = require('path');
+
+const PING_GIF_URL = 'https://i.pinimg.com/736x/e2/12/4d/e2124de5134e59f5a863a7bb396dee78.jpg';
 
 module.exports = {
     name: Events.MessageCreate,
@@ -28,64 +30,54 @@ module.exports = {
 
                 // Deliver DM notification
                 try {
-                    const noticeCard = new V2Card()
-                        .setAccent('error')
-                        .setTitle('[SECURITY ENFORCEMENT] Mass Mention Violation')
-                        .setDescription(`You attempted an unauthorized mass mention (\`@everyone\` or \`@here\`) in **${message.guild.name}**.\n\nA **10 minute timeout** has been automatically applied to your account.`);
-                    await noticeCard.send(message.author);
+                    const noticeCard = UI.embed()
+                        .color('error')
+                        .title('Mass Mention Violation')
+                        .desc(`You attempted an unauthorized mass mention in **${message.guild.name}**.\n\nA 10 minute timeout has been automatically applied to your account.`);
+                    await message.author.send({ embeds: [noticeCard.build()] });
                 } catch (e) {}
 
                 // Send audit card to mod log channel
                 try {
-                    const logChannels = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/logChannels.json'), 'utf8'));
-                    if (logChannels.modLog) {
-                        const modLogChannel = message.guild.channels.cache.get(logChannels.modLog);
-                        if (modLogChannel) {
-                            const auditCard = new V2Card()
-                                .setAccent('error')
-                                .setTitle('[AUTO-MOD VIOLATION] Unauthorized Mass Mention')
-                                .setDescription(`User ${message.author} (\`${message.author.tag}\`) attempted a restricted broadcast mention.`)
-                                .addField('Target Channel', `<#${message.channel.id}>`, true)
-                                .addField('Enforcement Action', '10 Minute Automatic Timeout', true)
-                                .addField('Message Content', `\`${message.content.substring(0, 500)}\``, false)
-                                .setTimestamp(new Date());
+                    const logChannelsPath = path.join(__dirname, '../data/logChannels.json');
+                    if (fs.existsSync(logChannelsPath)) {
+                        const logChannels = JSON.parse(fs.readFileSync(logChannelsPath, 'utf8'));
+                        if (logChannels.modLog) {
+                            const modLogChannel = message.guild.channels.cache.get(logChannels.modLog);
+                            if (modLogChannel) {
+                                const auditCard = UI.embed()
+                                    .color('error')
+                                    .title('Unauthorized Mass Mention')
+                                    .desc(`User ${message.author} (\`${message.author.tag}\`) attempted a restricted broadcast mention.`)
+                                    .field('Target Channel', `<#${message.channel.id}>`, true)
+                                    .field('Action', '10 Minute Timeout', true)
+                                    .field('Content', `\`${message.content.substring(0, 500)}\``, false);
 
-                            await auditCard.send(modLogChannel);
+                                await modLogChannel.send({ embeds: [auditCard.build()] });
+                            }
                         }
                     }
                 } catch (e) {}
 
                 // Public warning card in channel
-                const publicCard = new V2Card()
-                    .setAccent('error')
-                    .setTitle('[AUTO-MOD] Unauthorized Broadcast Mention Intercepted')
-                    .setDescription(`${message.author} was placed on a **10 minute timeout** for attempting an unauthorized broadcast mention. Incident logged.`)
-                    .setFooter('Warden Automated Guard');
+                const publicCard = UI.embed()
+                    .color('error')
+                    .title('Broadcast Mention Intercepted')
+                    .desc(`${message.author} was placed on a 10 minute timeout for attempting an unauthorized broadcast mention.`)
+                    .footer('Warden Guard');
 
-                return message.channel.send({
-                    ...publicCard.toPayload(),
-                    components: [publicCard.buildContainer()]
-                });
+                return message.channel.send({ embeds: [publicCard.build()] });
             }
         }
 
-        // Bot mention response
+        // Bot mention response (Ping GIF)
         if (message.mentions.has(client.user) && !message.author.bot) {
-            const infoCard = new V2Card()
-                .setAccent('primary')
-                .setTitle('[SYSTEM INFORMATION] Warden Active')
-                .setDescription(
-                    `Warden is fully active and protecting **${message.guild.name}**.\n\n` +
-                    `• Prefix Commands: \`${prefix}help\`\n` +
-                    `• Modern Slash Commands: \`/help\`, \`/ban\`, \`/mute\`, \`/warnings\`\n` +
-                    `• Discord Components V2 Engine: Active`
-                )
-                .setFooter('Warden Security Engine');
+            const isDirectMention = message.content.includes(`<@${client.user.id}>`) || 
+                                    message.content.includes(`<@!${client.user.id}>`);
 
-            return message.channel.send({
-                ...infoCard.toPayload(),
-                components: [infoCard.buildContainer()]
-            });
+            if (isDirectMention || !message.reference) {
+                return message.reply({ content: PING_GIF_URL });
+            }
         }
 
         // Prefix command handling
