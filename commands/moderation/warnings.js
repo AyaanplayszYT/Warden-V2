@@ -1,35 +1,22 @@
-const { PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
-const { EmbedTemplates, WardenEmbed, emojis } = require('../../utils/embedBuilder');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, PermissionFlagsBits } = require('discord.js');
+const { V2Card, V2Templates } = require('../../utils/v2Components');
 const warningsDB = require('../../utils/warningsDB');
 const logger = require('../../utils/logger');
 
 module.exports = {
     data: {
         name: 'warnings',
-        description: 'View warnings for a user or manage warning cases.',
+        description: 'View or manage recorded warnings for a user.',
         options: [
             {
-                name: 'view',
-                description: 'View all warnings for a user',
+                name: 'list',
+                description: 'List warnings for a user',
                 type: 1, // SUB_COMMAND
                 options: [
                     {
                         name: 'user',
-                        description: 'The user to view warnings for',
+                        description: 'The user to check warnings for',
                         type: 6, // USER
-                        required: true,
-                    },
-                ],
-            },
-            {
-                name: 'remove',
-                description: 'Remove a specific warning by case ID',
-                type: 1, // SUB_COMMAND
-                options: [
-                    {
-                        name: 'case_id',
-                        description: 'The case ID to remove',
-                        type: 4, // INTEGER
                         required: true,
                     },
                 ],
@@ -47,217 +34,184 @@ module.exports = {
                     },
                 ],
             },
+            {
+                name: 'remove',
+                description: 'Remove a specific warning by Case ID',
+                type: 1, // SUB_COMMAND
+                options: [
+                    {
+                        name: 'case_id',
+                        description: 'The case ID to remove',
+                        type: 4, // INTEGER
+                        required: true,
+                    },
+                ],
+            },
         ],
         default_member_permissions: PermissionFlagsBits.ModerateMembers,
     },
 
     async execute(interaction) {
-        const subcommand = interaction.options.getSubcommand();
+        const subcommand = interaction.options.getSubcommand() || 'list';
 
         if (!interaction.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
-            return interaction.reply({
-                embeds: [EmbedTemplates.error('Permission Denied', 'You need the **Moderate Members** permission to use this command.')],
-                ephemeral: true,
-            });
+            return V2Templates.error(
+                'Permission Denied',
+                'You lack the required `Moderate Members` permission to execute this command.'
+            ).reply(interaction, { ephemeral: true });
         }
 
-        switch (subcommand) {
-            case 'view':
-                await this.viewWarnings(interaction);
-                break;
-            case 'remove':
-                await this.removeWarning(interaction);
-                break;
-            case 'clear':
-                await this.clearWarnings(interaction);
-                break;
+        if (subcommand === 'list') {
+            await this.listWarnings(interaction);
+        } else if (subcommand === 'clear') {
+            await this.clearWarnings(interaction);
+        } else if (subcommand === 'remove') {
+            await this.removeWarning(interaction);
         }
     },
 
-    async viewWarnings(interaction) {
+    async listWarnings(interaction) {
+        await interaction.deferReply();
         const targetUser = interaction.options.getUser('user');
         const warnings = warningsDB.get(interaction.guild.id, targetUser.id);
 
-        if (warnings.length === 0) {
-            return interaction.reply({
-                embeds: [EmbedTemplates.info('No Warnings', `**${targetUser.tag}** has no warnings in this server.`)],
-            });
+        if (!warnings || warnings.length === 0) {
+            return V2Templates.info(
+                'No Warnings on Record',
+                `Target **${targetUser.tag}** (\`${targetUser.id}\`) has zero recorded warnings in this server.`
+            ).editReply(interaction);
         }
 
-        // Create paginated embeds (5 warnings per page)
         const warningsPerPage = 5;
+        const totalPages = Math.ceil(warnings.length / warningsPerPage);
         const pages = [];
 
         for (let i = 0; i < warnings.length; i += warningsPerPage) {
             const pageWarnings = warnings.slice(i, i + warningsPerPage);
-            
-            const embed = new WardenEmbed()
-                .setType('info')
-                .setTitle(`${emojis.logs} Warnings for ${targetUser.tag}`)
-                .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
-                .setDescription(`Showing ${i + 1}-${Math.min(i + warningsPerPage, warnings.length)} of ${warnings.length} warnings`)
-                .build();
+            const pageIndex = Math.floor(i / warningsPerPage);
+
+            const card = new V2Card()
+                .setAccent('info')
+                .setTitle(`[WARNING LOGS] ${targetUser.tag}`, `Displaying records ${i + 1}–${Math.min(i + warningsPerPage, warnings.length)} of ${warnings.length}`);
 
             for (const warning of pageWarnings) {
-                const date = new Date(warning.timestamp);
-                embed.addFields({
-                    name: `Case #${warning.caseId} | ${warning.type.toUpperCase()}`,
-                    value: `**Moderator:** ${warning.moderatorTag}\n**Reason:** ${warning.reason}\n**Date:** <t:${Math.floor(date.getTime() / 1000)}:R>`,
-                    inline: false,
-                });
+                const ts = Math.floor(new Date(warning.timestamp).getTime() / 1000);
+                card.addField(
+                    `Case #${warning.caseId} [${warning.type.toUpperCase()}]`,
+                    `**Moderator:** ${warning.moderatorTag}\n**Reason:** ${warning.reason}\n**Date:** <t:${ts}:R>`,
+                    false
+                );
             }
 
-            pages.push(embed);
+            pages.push(card);
         }
 
         if (pages.length === 1) {
-            return interaction.reply({ embeds: [pages[0]] });
+            return pages[0].editReply(interaction);
         }
 
-        // Pagination
         let currentPage = 0;
-        const row = new ActionRowBuilder().addComponents(
+
+        const makeRow = (page) => new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setCustomId('prev')
-                .setEmoji('◀️')
+                .setCustomId('page_first')
+                .setLabel('First')
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(page === 0),
+            new ButtonBuilder()
+                .setCustomId('page_prev')
+                .setLabel('Previous')
                 .setStyle(ButtonStyle.Primary)
-                .setDisabled(true),
+                .setDisabled(page === 0),
             new ButtonBuilder()
-                .setCustomId('page')
-                .setLabel(`1/${pages.length}`)
+                .setCustomId('page_indicator')
+                .setLabel(`${page + 1} / ${totalPages}`)
                 .setStyle(ButtonStyle.Secondary)
                 .setDisabled(true),
             new ButtonBuilder()
-                .setCustomId('next')
-                .setEmoji('▶️')
+                .setCustomId('page_next')
+                .setLabel('Next')
                 .setStyle(ButtonStyle.Primary)
-                .setDisabled(pages.length <= 1)
+                .setDisabled(page >= totalPages - 1),
+            new ButtonBuilder()
+                .setCustomId('page_last')
+                .setLabel('Last')
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(page >= totalPages - 1)
         );
 
-        const message = await interaction.reply({
-            embeds: [pages[0]],
-            components: [row],
-            fetchReply: true,
+        const currentCard = pages[0];
+        currentCard.actionRows = [makeRow(0)];
+
+        const replyMessage = await interaction.editReply({
+            ...currentCard.toPayload(),
+            components: [currentCard.buildContainer()]
         });
 
-        const collector = message.createMessageComponentCollector({
+        const collector = replyMessage.createMessageComponentCollector({
             componentType: ComponentType.Button,
             filter: i => i.user.id === interaction.user.id,
-            time: 120000,
+            time: 60000,
         });
 
         collector.on('collect', async i => {
-            if (i.customId === 'prev') {
-                currentPage--;
-            } else if (i.customId === 'next') {
-                currentPage++;
-            }
+            if (i.customId === 'page_first') currentPage = 0;
+            else if (i.customId === 'page_prev') currentPage = Math.max(0, currentPage - 1);
+            else if (i.customId === 'page_next') currentPage = Math.min(totalPages - 1, currentPage + 1);
+            else if (i.customId === 'page_last') currentPage = totalPages - 1;
 
-            row.components[0].setDisabled(currentPage === 0);
-            row.components[1].setLabel(`${currentPage + 1}/${pages.length}`);
-            row.components[2].setDisabled(currentPage >= pages.length - 1);
+            const pageCard = pages[currentPage];
+            pageCard.actionRows = [makeRow(currentPage)];
 
-            await i.update({ embeds: [pages[currentPage]], components: [row] });
+            await i.update({
+                ...pageCard.toPayload(),
+                components: [pageCard.buildContainer()]
+            }).catch(() => {});
         });
 
-        collector.on('end', () => {
-            row.components.forEach(c => c.setDisabled(true));
-            message.edit({ components: [row] }).catch(() => {});
+        collector.on('end', async () => {
+            const finalCard = pages[currentPage];
+            finalCard.actionRows = [];
+            await interaction.editReply({
+                ...finalCard.toPayload(),
+                components: [finalCard.buildContainer()]
+            }).catch(() => {});
         });
-    },
-
-    async removeWarning(interaction) {
-        const caseId = interaction.options.getInteger('case_id');
-        
-        const warning = warningsDB.getByCase(interaction.guild.id, caseId);
-        if (!warning) {
-            return interaction.reply({
-                embeds: [EmbedTemplates.error('Case Not Found', `No warning with case ID **#${caseId}** was found.`)],
-                ephemeral: true,
-            });
-        }
-
-        const removed = warningsDB.removeByCase(interaction.guild.id, caseId);
-        if (removed) {
-            const embed = EmbedTemplates.success(
-                'Warning Removed',
-                `Successfully removed warning case **#${caseId}** from <@${warning.userId}>.`
-            );
-            logger.info(`${interaction.user.tag} removed warning case #${caseId} in ${interaction.guild.name}`);
-            return interaction.reply({ embeds: [embed] });
-        } else {
-            return interaction.reply({
-                embeds: [EmbedTemplates.error('Removal Failed', 'Failed to remove the warning.')],
-                ephemeral: true,
-            });
-        }
     },
 
     async clearWarnings(interaction) {
+        await interaction.deferReply();
         const targetUser = interaction.options.getUser('user');
-        const currentCount = warningsDB.count(interaction.guild.id, targetUser.id);
 
-        if (currentCount === 0) {
-            return interaction.reply({
-                embeds: [EmbedTemplates.info('No Warnings', `**${targetUser.tag}** has no warnings to clear.`)],
-                ephemeral: true,
-            });
+        const success = warningsDB.clear(interaction.guild.id, targetUser.id);
+        if (!success) {
+            return V2Templates.info(
+                'No Warnings to Clear',
+                `Target **${targetUser.tag}** had no recorded warnings.`
+            ).editReply(interaction);
         }
 
-        // Confirmation dialog
-        const confirmEmbed = new WardenEmbed()
-            .setType('warning')
-            .setTitle(`${emojis.warning} Confirm Clear Warnings`)
-            .setDescription(`Are you sure you want to clear all **${currentCount}** warning(s) for **${targetUser.tag}**?\n\nThis action cannot be undone.`)
-            .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
-            .build();
+        return V2Templates.success(
+            'Warnings Cleared',
+            `All warning entries for **${targetUser.tag}** have been expunged from the database.`
+        ).editReply(interaction);
+    },
 
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('clear_confirm')
-                .setLabel('Clear All Warnings')
-                .setStyle(ButtonStyle.Danger)
-                .setEmoji('🗑️'),
-            new ButtonBuilder()
-                .setCustomId('clear_cancel')
-                .setLabel('Cancel')
-                .setStyle(ButtonStyle.Secondary)
-                .setEmoji('❌')
-        );
+    async removeWarning(interaction) {
+        await interaction.deferReply();
+        const caseId = interaction.options.getInteger('case_id');
 
-        const message = await interaction.reply({
-            embeds: [confirmEmbed],
-            components: [row],
-            fetchReply: true,
-        });
-
-        try {
-            const buttonInteraction = await message.awaitMessageComponent({
-                componentType: ComponentType.Button,
-                filter: i => i.user.id === interaction.user.id,
-                time: 30000,
-            });
-
-            if (buttonInteraction.customId === 'clear_cancel') {
-                const cancelEmbed = EmbedTemplates.info('Cancelled', 'Warning clear action has been cancelled.');
-                return buttonInteraction.update({ embeds: [cancelEmbed], components: [] });
-            }
-
-            const clearedCount = warningsDB.clear(interaction.guild.id, targetUser.id);
-            const successEmbed = EmbedTemplates.success(
-                'Warnings Cleared',
-                `Successfully cleared **${clearedCount}** warning(s) from **${targetUser.tag}**.`
-            );
-
-            logger.info(`${interaction.user.tag} cleared ${clearedCount} warnings for ${targetUser.tag} in ${interaction.guild.name}`);
-            return buttonInteraction.update({ embeds: [successEmbed], components: [] });
-
-        } catch (error) {
-            if (error.code === 'InteractionCollectorError') {
-                const timeoutEmbed = EmbedTemplates.error('Timed Out', 'Confirmation timed out. No warnings were cleared.');
-                return interaction.editReply({ embeds: [timeoutEmbed], components: [] });
-            }
-            throw error;
+        const success = warningsDB.removeByCaseId(interaction.guild.id, caseId);
+        if (!success) {
+            return V2Templates.error(
+                'Case Not Found',
+                `Warning with Case ID \`#${caseId}\` was not found in this guild's database.`
+            ).editReply(interaction);
         }
+
+        return V2Templates.success(
+            'Warning Removed',
+            `Warning Case ID \`#${caseId}\` has been permanently deleted.`
+        ).editReply(interaction);
     },
 };

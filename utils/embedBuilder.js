@@ -1,30 +1,28 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const colors = require('../config/colors.json');
 const emojis = require('../config/emojis.json');
-const { embedFooter, version } = require('../config/config.json');
+const { embedFooter } = require('../config/config.json');
+const { V2Card, V2Templates, resolveColorNumber } = require('./v2Components');
 
 /**
- * Warden Embed Builder - Creates consistent, beautiful embeds
+ * Warden Embed Builder - Clean, high-contrast, emoji-free modern embeds
  */
 class WardenEmbed {
     constructor() {
         this.embed = new EmbedBuilder();
-        this.embed.setFooter({ text: embedFooter || 'Warden Bot • Protecting Your Server' });
+        this.embed.setColor(resolveColorNumber(colors.primary || '#5865F2'));
+        this.embed.setFooter({ text: embedFooter || 'Warden | Security & Utility' });
         this.embed.setTimestamp();
     }
 
-    /**
-     * Set embed color by type
-     * @param {string} type - The type of embed (success, error, warning, info, etc.)
-     */
     setType(type) {
-        const color = colors[type] || colors.primary;
+        const color = resolveColorNumber(colors[type] || colors.primary);
         this.embed.setColor(color);
         return this;
     }
 
     setColor(color) {
-        this.embed.setColor(color);
+        this.embed.setColor(resolveColorNumber(color));
         return this;
     }
 
@@ -49,7 +47,6 @@ class WardenEmbed {
     }
 
     setAuthor(nameOrOptions, iconURL, url) {
-        // Support both setAuthor('name') and setAuthor({ name: 'name', iconURL: 'url' })
         if (typeof nameOrOptions === 'object' && nameOrOptions !== null) {
             this.embed.setAuthor(nameOrOptions);
         } else {
@@ -72,7 +69,6 @@ class WardenEmbed {
     }
 
     setFooter(textOrOptions, iconURL) {
-        // Support both setFooter('text') and setFooter({ text: 'text', iconURL: 'url' })
         if (typeof textOrOptions === 'object' && textOrOptions !== null) {
             this.embed.setFooter(textOrOptions);
         } else {
@@ -83,7 +79,7 @@ class WardenEmbed {
         return this;
     }
 
-    setTimestamp(timestamp) {
+    setTimestamp(timestamp = new Date()) {
         this.embed.setTimestamp(timestamp);
         return this;
     }
@@ -91,131 +87,111 @@ class WardenEmbed {
     build() {
         return this.embed;
     }
+
+    /**
+     * Converts this embed into a Discord Components V2 payload
+     */
+    toV2() {
+        const card = new V2Card()
+            .setAccent(this.embed.data.color || colors.primary);
+
+        if (this.embed.data.title) card.setTitle(this.embed.data.title);
+        if (this.embed.data.description) card.setDescription(this.embed.data.description);
+        if (this.embed.data.fields) card.addFields(this.embed.data.fields);
+        if (this.embed.data.footer) card.setFooter(this.embed.data.footer.text);
+
+        return card.toV2();
+    }
 }
 
 /**
- * Pre-built embed templates for common actions
+ * Clean templates for embed outputs
  */
 const EmbedTemplates = {
-    /**
-     * Success embed
-     */
     success(title, description) {
         return new WardenEmbed()
             .setType('success')
-            .setTitle(`${emojis.success} ${title}`)
+            .setTitle(`[SUCCESS] ${title}`)
             .setDescription(description)
             .build();
     },
 
-    /**
-     * Error embed
-     */
     error(title, description) {
         return new WardenEmbed()
             .setType('error')
-            .setTitle(`${emojis.error} ${title}`)
+            .setTitle(`[ERROR] ${title}`)
             .setDescription(description)
             .build();
     },
 
-    /**
-     * Warning embed
-     */
     warning(title, description) {
         return new WardenEmbed()
             .setType('warning')
-            .setTitle(`${emojis.warning} ${title}`)
+            .setTitle(`[WARNING] ${title}`)
             .setDescription(description)
             .build();
     },
 
-    /**
-     * Info embed
-     */
     info(title, description) {
         return new WardenEmbed()
             .setType('info')
-            .setTitle(`${emojis.info} ${title}`)
+            .setTitle(`[INFO] ${title}`)
             .setDescription(description)
             .build();
     },
 
-    /**
-     * Moderation action embed (ban, kick, mute, warn)
-     */
     modAction(options) {
         const {
-            action, // 'ban', 'kick', 'mute', 'warn', 'unban', 'unmute'
-            target, // GuildMember or User
-            moderator, // User
+            action,
+            target,
+            moderator,
             reason,
-            duration, // optional, for mute
-            caseId, // optional
-            dmSent, // optional boolean
+            duration,
+            caseId,
+            dmSent,
         } = options;
 
         const actionTitles = {
-            ban: `${emojis.ban} User Banned`,
-            kick: `${emojis.kick} User Kicked`,
-            mute: `${emojis.mute} User Muted`,
-            warn: `${emojis.warn} User Warned`,
-            unban: `${emojis.unban} User Unbanned`,
-            unmute: `${emojis.unmute} User Unmuted`,
-            softban: `${emojis.ban} User Softbanned`,
-            tempban: `${emojis.ban} User Temporarily Banned`,
-        };
-
-        const actionColors = {
-            ban: 'ban',
-            kick: 'kick',
-            mute: 'mute',
-            warn: 'warn',
-            unban: 'unban',
-            unmute: 'unmute',
-            softban: 'ban',
-            tempban: 'ban',
+            ban: '[BANNED] User Banned',
+            kick: '[KICKED] User Kicked',
+            mute: '[MUTED] User Timed Out',
+            warn: '[WARNED] User Warned',
+            unban: '[UNBANNED] User Ban Revoked',
+            unmute: '[UNMUTED] User Timeout Removed',
+            softban: '[SOFTBANNED] User Softbanned',
+            tempban: '[TEMPBANNED] User Temporarily Banned',
         };
 
         const embed = new WardenEmbed()
-            .setType(actionColors[action] || 'modAction')
-            .setTitle(actionTitles[action] || `${emojis.moderator} Moderation Action`)
+            .setType(action)
+            .setTitle(actionTitles[action] || `[MOD ACTION] ${action.toUpperCase()}`)
             .setThumbnail(target.displayAvatarURL?.() || target.avatarURL?.() || null);
 
-        // Add user info
         const targetTag = target.user?.tag || target.tag || 'Unknown';
         const targetId = target.user?.id || target.id || 'Unknown';
-        embed.addField(`${emojis.user} Target`, `${targetTag}\n\`${targetId}\``, true);
+        embed.addField('Target', `${targetTag}\n\`${targetId}\``, true);
 
-        // Add moderator info
         if (moderator) {
-            embed.addField(`${emojis.moderator} Moderator`, `${moderator.tag}\n\`${moderator.id}\``, true);
+            embed.addField('Moderator', `${moderator.tag}\n\`${moderator.id}\``, true);
         }
 
-        // Add duration for mute/tempban
         if (duration) {
-            embed.addField(`${emojis.clock} Duration`, duration, true);
+            embed.addField('Duration', duration, true);
         }
 
-        // Add reason
-        embed.addField(`${emojis.edit} Reason`, reason || 'No reason provided', false);
+        embed.addField('Reason', reason || 'No reason provided', false);
 
-        // Add case ID if provided
         if (caseId) {
-            embed.addField(`${emojis.id} Case ID`, `#${caseId}`, true);
+            embed.addField('Case ID', `#${caseId}`, true);
         }
 
-        // Add DM status
         if (dmSent !== undefined) {
-            embed.addField(`${emojis.reply} DM Sent`, dmSent ? 'Yes' : 'No', true);
+            embed.addField('DM Status', dmSent ? 'Delivered' : 'Failed / Blocked', true);
         }
 
         return embed.build();
     },
 
-    /**
-     * User DM notification embed for moderation
-     */
     modDM(options) {
         const {
             action,
@@ -237,32 +213,29 @@ const EmbedTemplates = {
 
         const embed = new WardenEmbed()
             .setType(action === 'warn' ? 'warn' : action === 'mute' ? 'mute' : 'ban')
-            .setTitle(`${emojis[action] || emojis.warning} ${actionMessages[action] || 'Moderation Action in'} ${guildName}`)
+            .setTitle(`[MODERATION] ${actionMessages[action] || 'Action in'} ${guildName}`)
             .setThumbnail(guildIcon);
 
         if (moderator) {
-            embed.addField(`${emojis.moderator} Moderator`, moderator.tag, true);
+            embed.addField('Moderator', moderator.tag, true);
         }
 
         if (duration) {
-            embed.addField(`${emojis.clock} Duration`, duration, true);
+            embed.addField('Duration', duration, true);
         }
 
-        embed.addField(`${emojis.edit} Reason`, reason || 'No reason provided', false);
+        embed.addField('Reason', reason || 'No reason provided', false);
 
         if (appealInfo) {
-            embed.addField(`${emojis.link} Appeal`, appealInfo, false);
+            embed.addField('Appeal', appealInfo, false);
         }
 
         return embed.build();
     },
 
-    /**
-     * Log embed for events
-     */
     log(options) {
         const {
-            type, // 'messageDelete', 'messageEdit', 'memberJoin', 'memberLeave', etc.
+            type,
             title,
             description,
             fields,
@@ -272,7 +245,7 @@ const EmbedTemplates = {
 
         const embed = new WardenEmbed()
             .setType(type || 'info')
-            .setTitle(title);
+            .setTitle(`[LOG] ${title}`);
 
         if (description) embed.setDescription(description);
         if (thumbnail) embed.setThumbnail(thumbnail);
@@ -284,9 +257,6 @@ const EmbedTemplates = {
         return embed.build();
     },
 
-    /**
-     * Paginated embed data structure
-     */
     pagination(pages, currentPage = 0) {
         return {
             embed: pages[currentPage],
@@ -295,27 +265,27 @@ const EmbedTemplates = {
             row: new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId('page_first')
-                    .setEmoji('⏮️')
+                    .setLabel('First')
                     .setStyle(ButtonStyle.Secondary)
                     .setDisabled(currentPage === 0),
                 new ButtonBuilder()
                     .setCustomId('page_prev')
-                    .setEmoji('◀️')
+                    .setLabel('Previous')
                     .setStyle(ButtonStyle.Primary)
                     .setDisabled(currentPage === 0),
                 new ButtonBuilder()
                     .setCustomId('page_indicator')
-                    .setLabel(`${currentPage + 1}/${pages.length}`)
+                    .setLabel(`${currentPage + 1} / ${pages.length}`)
                     .setStyle(ButtonStyle.Secondary)
                     .setDisabled(true),
                 new ButtonBuilder()
                     .setCustomId('page_next')
-                    .setEmoji('▶️')
+                    .setLabel('Next')
                     .setStyle(ButtonStyle.Primary)
                     .setDisabled(currentPage >= pages.length - 1),
                 new ButtonBuilder()
                     .setCustomId('page_last')
-                    .setEmoji('⏭️')
+                    .setLabel('Last')
                     .setStyle(ButtonStyle.Secondary)
                     .setDisabled(currentPage >= pages.length - 1)
             ),
@@ -324,7 +294,7 @@ const EmbedTemplates = {
 };
 
 /**
- * Confirmation dialog builder
+ * Clean confirmation dialog
  */
 const ConfirmationDialog = {
     create(options) {
@@ -339,7 +309,7 @@ const ConfirmationDialog = {
 
         const embed = new WardenEmbed()
             .setType('warning')
-            .setTitle(`${emojis.warning} ${title}`)
+            .setTitle(`[CONFIRMATION] ${title}`)
             .setDescription(description)
             .build();
 
@@ -347,13 +317,11 @@ const ConfirmationDialog = {
             new ButtonBuilder()
                 .setCustomId('confirm_yes')
                 .setLabel(confirmLabel)
-                .setStyle(confirmStyle)
-                .setEmoji('✅'),
+                .setStyle(confirmStyle),
             new ButtonBuilder()
                 .setCustomId('confirm_no')
                 .setLabel(cancelLabel)
                 .setStyle(ButtonStyle.Secondary)
-                .setEmoji('❌')
         );
 
         return { embed, row, timeout };
@@ -364,6 +332,8 @@ module.exports = {
     WardenEmbed,
     EmbedTemplates,
     ConfirmationDialog,
+    V2Card,
+    V2Templates,
     colors,
     emojis,
 };

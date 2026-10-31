@@ -1,7 +1,8 @@
-const { Events, EmbedBuilder } = require('discord.js');
+const { Events } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const logger = require('../utils/logger');
+const { V2Card } = require('../utils/v2Components');
 
 module.exports = {
     name: Events.ChannelCreate,
@@ -11,24 +12,22 @@ module.exports = {
             const logChannels = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/logChannels.json'), 'utf8'));
             modLogChannelId = logChannels.modLog;
         } catch (e) {}
-        let guild = channel.guild || (channel.parent && channel.parent.guild);
+
+        const guild = channel.guild || (channel.parent && channel.parent.guild);
         if (modLogChannelId && guild) {
             const modLogChannel = guild.channels.cache.get(modLogChannelId);
-            const embed = new EmbedBuilder()
-                .setColor('#00FF00')
-                .setTitle('Channel Created')
-                .addFields(
-                    { name: 'Name', value: channel.name, inline: true },
-                    { name: 'Type', value: channel.type, inline: true },
-                    { name: 'ID', value: channel.id, inline: true }
-                )
-                .setTimestamp();
             if (modLogChannel) {
-                modLogChannel.send({ embeds: [embed] });
-            } else {
-                logger.warn('Mod log channel not found for channel create event.');
+                const card = new V2Card()
+                    .setAccent('success')
+                    .setTitle('[AUDIT LOG] Channel Created')
+                    .addField('Channel Name', `#${channel.name}`, true)
+                    .addField('Channel Type', String(channel.type), true)
+                    .addField('Identifier', `\`${channel.id}\``, true)
+                    .setTimestamp(new Date());
+
+                await card.send(modLogChannel);
             }
         }
-        logger.info(`Channel created: ${channel.name} (${channel.id})`);
+        logger.info(`Channel created: #${channel.name} (${channel.id})`);
     },
 };

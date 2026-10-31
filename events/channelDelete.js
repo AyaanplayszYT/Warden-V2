@@ -1,7 +1,8 @@
-const { Events, EmbedBuilder } = require('discord.js');
+const { Events } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const logger = require('../utils/logger');
+const { V2Card } = require('../utils/v2Components');
 
 module.exports = {
     name: Events.ChannelDelete,
@@ -11,24 +12,22 @@ module.exports = {
             const logChannels = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/logChannels.json'), 'utf8'));
             modLogChannelId = logChannels.modLog;
         } catch (e) {}
-        let guild = channel.guild || (channel.parent && channel.parent.guild);
+
+        const guild = channel.guild || (channel.parent && channel.parent.guild);
         if (modLogChannelId && guild) {
             const modLogChannel = guild.channels.cache.get(modLogChannelId);
-            const embed = new EmbedBuilder()
-                .setColor('#FF0000')
-                .setTitle('Channel Deleted')
-                .addFields(
-                    { name: 'Name', value: typeof channel.name === 'string' ? channel.name : 'Unknown', inline: true },
-                    { name: 'Type', value: typeof channel.type === 'string' ? channel.type : String(channel.type ?? 'Unknown'), inline: true },
-                    { name: 'ID', value: typeof channel.id === 'string' ? channel.id : 'Unknown', inline: true }
-                )
-                .setTimestamp();
             if (modLogChannel) {
-                modLogChannel.send({ embeds: [embed] });
-            } else {
-                logger.warn('Mod log channel not found for channel delete event.');
+                const card = new V2Card()
+                    .setAccent('error')
+                    .setTitle('[AUDIT LOG] Channel Deleted')
+                    .addField('Channel Name', `#${channel.name || 'Unknown'}`, true)
+                    .addField('Channel Type', String(channel.type || 'Unknown'), true)
+                    .addField('Identifier', `\`${channel.id || 'Unknown'}\``, true)
+                    .setTimestamp(new Date());
+
+                await card.send(modLogChannel);
             }
         }
-        logger.info(`Channel deleted: ${channel.name} (${channel.id})`);
+        logger.info(`Channel deleted: #${channel.name || 'Unknown'} (${channel.id || 'Unknown'})`);
     },
 };

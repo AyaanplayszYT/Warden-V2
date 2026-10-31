@@ -1,6 +1,5 @@
 const { PermissionFlagsBits } = require('discord.js');
-const { EmbedTemplates, WardenEmbed, emojis } = require('../../utils/embedBuilder');
-const warningsDB = require('../../utils/warningsDB');
+const { V2Templates } = require('../../utils/v2Components');
 const logger = require('../../utils/logger');
 const fs = require('fs');
 const path = require('path');
@@ -8,17 +7,17 @@ const path = require('path');
 module.exports = {
     data: {
         name: 'unban',
-        description: 'Unban a user from the server.',
+        description: 'Revoke a guild ban by User ID.',
         options: [
             {
                 name: 'user_id',
-                description: 'The ID of the user to unban',
+                description: 'The Discord ID of the user to unban',
                 type: 3, // STRING
                 required: true,
             },
             {
                 name: 'reason',
-                description: 'Reason for the unban',
+                description: 'Reason for revoking the ban',
                 type: 3, // STRING
                 required: false,
             },
@@ -29,80 +28,67 @@ module.exports = {
     async execute(interaction) {
         await interaction.deferReply();
 
-        const userId = interaction.options.getString('user_id');
+        const userId = interaction.options.getString('user_id').trim();
         const reason = interaction.options.getString('reason') || 'No reason provided';
 
-        // Validate user ID format
-        if (!/^\d{17,19}$/.test(userId)) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Invalid User ID', 'Please provide a valid Discord user ID (17-19 digit number).')],
-            });
-        }
-
-        // Permission check
         if (!interaction.member.permissions.has(PermissionFlagsBits.BanMembers)) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Permission Denied', 'You need the **Ban Members** permission to use this command.')],
-            });
+            return V2Templates.error(
+                'Permission Denied',
+                'You lack the required `Ban Members` permission to execute this command.'
+            ).editReply(interaction);
         }
 
-        // Check if user is actually banned
-        const ban = await interaction.guild.bans.fetch(userId).catch(() => null);
-        if (!ban) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Not Banned', 'This user is not banned from this server.')],
-            });
+        if (!/^\d{17,20}$/.test(userId)) {
+            return V2Templates.error(
+                'Invalid User ID',
+                'The provided user ID format is invalid. Discord IDs must be numeric (17-20 digits).'
+            ).editReply(interaction);
         }
 
         try {
-            // Unban the user
-            await interaction.guild.members.unban(userId, `Unbanned by ${interaction.user.tag} | ${reason}`);
+            const banEntry = await interaction.guild.bans.fetch(userId).catch(() => null);
+            if (!banEntry) {
+                return V2Templates.error(
+                    'Ban Record Not Found',
+                    `No active ban record exists for User ID \`${userId}\` in this guild.`
+                ).editReply(interaction);
+            }
 
-            // Log to warnings database
-            const warning = warningsDB.add(interaction.guild.id, userId, {
-                moderatorId: interaction.user.id,
-                moderatorTag: interaction.user.tag,
-                reason,
-                type: 'unban',
-            });
+            const targetUser = banEntry.user;
+            await interaction.guild.bans.remove(userId, `[Warden Unban] By ${interaction.user.tag}: ${reason}`);
 
-            // Create success embed
-            const successEmbed = EmbedTemplates.modAction({
+            const card = V2Templates.modAction({
                 action: 'unban',
-                target: ban.user,
+                target: targetUser,
                 moderator: interaction.user,
                 reason,
-                caseId: warning.caseId,
             });
 
-            // Log to mod log channel
-            await logToModChannel(interaction.guild, successEmbed);
+            await logToModChannel(interaction.guild, card);
+            await card.editReply(interaction);
 
-            await interaction.editReply({
-                embeds: [successEmbed],
-            });
-
-            logger.info(`${interaction.user.tag} unbanned ${ban.user.tag} from ${interaction.guild.name}. Reason: ${reason}`);
+            logger.info(`${interaction.user.tag} unbanned ${targetUser.tag} (${userId}). Reason: ${reason}`);
 
         } catch (error) {
-            logger.error('Error during unban command:', error);
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Unban Failed', 'An error occurred while trying to unban this user.')],
-            });
+            logger.error('Error during unban command execution:', error);
+            return V2Templates.error(
+                'Execution Failure',
+                'An unexpected error occurred while attempting to revoke the ban.'
+            ).editReply(interaction);
         }
     },
 };
 
-async function logToModChannel(guild, embed) {
+async function logToModChannel(guild, card) {
     try {
         const logChannels = JSON.parse(fs.readFileSync(path.join(__dirname, '../../data/logChannels.json'), 'utf8'));
         if (logChannels.modLog) {
             const modLogChannel = guild.channels.cache.get(logChannels.modLog);
             if (modLogChannel) {
-                await modLogChannel.send({ embeds: [embed] });
+                await card.send(modLogChannel);
             }
         }
     } catch (error) {
-        logger.warn('Could not log to mod channel:', error);
+        logger.warn('Could not dispatch log to mod channel:', error);
     }
 }

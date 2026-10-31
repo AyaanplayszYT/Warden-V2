@@ -1,154 +1,73 @@
-const { SlashCommandBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js');
-const { WardenEmbed, colors } = require('../../utils/embedBuilder');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { V2Card } = require('../../utils/v2Components');
+const logger = require('../../utils/logger');
 
 module.exports = {
-    name: 'avatar',
-    description: 'Display a user\'s avatar in full size',
-    usage: 'avatar [user]',
-    category: 'utility',
-    data: new SlashCommandBuilder()
-        .setName('avatar')
-        .setDescription('Display a user\'s avatar in full size')
-        .addUserOption(option =>
-            option.setName('user')
-                .setDescription('The user whose avatar to display')
-                .setRequired(false)
-        )
-        .addBooleanOption(option =>
-            option.setName('server')
-                .setDescription('Show server-specific avatar if available')
-                .setRequired(false)
-        ),
+    data: {
+        name: 'avatar',
+        description: 'View and download user avatar in high resolution formats.',
+        options: [
+            {
+                name: 'user',
+                description: 'The user whose avatar you wish to view (defaults to self)',
+                type: 6, // USER
+                required: false,
+            },
+            {
+                name: 'server_avatar',
+                description: 'View server-specific avatar if present',
+                type: 5, // BOOLEAN
+                required: false,
+            },
+        ],
+    },
 
-    async execute(interaction, client) {
-        const user = interaction.options?.getUser('user') || interaction.author || interaction.user;
-        const showServer = interaction.options?.getBoolean('server') ?? true;
-        
-        // Fetch member for guild avatar
-        let member = null;
-        try {
-            member = await interaction.guild.members.fetch(user.id);
-        } catch {
-            // User not in guild
+    async execute(interaction) {
+        await interaction.deferReply();
+
+        const targetUser = interaction.options.getUser('user') || interaction.user;
+        const wantServerAvatar = interaction.options.getBoolean('server_avatar') || false;
+        const member = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
+
+        let avatarURL;
+        let avatarType = 'Global Account Avatar';
+
+        if (wantServerAvatar && member && member.avatar) {
+            avatarURL = member.displayAvatarURL({ dynamic: true, size: 4096 });
+            avatarType = 'Guild Profile Avatar';
+        } else {
+            avatarURL = targetUser.displayAvatarURL({ dynamic: true, size: 4096 });
         }
 
-        const globalAvatar = user.displayAvatarURL({ size: 4096, dynamic: true });
-        const serverAvatar = member?.displayAvatarURL({ size: 4096, dynamic: true });
-        const hasServerAvatar = serverAvatar && serverAvatar !== globalAvatar;
+        const pngURL = avatarURL.replace(/\.(webp|gif|jpg|jpeg)(\?.*)?$/i, '.png');
+        const jpgURL = avatarURL.replace(/\.(webp|gif|png|jpeg)(\?.*)?$/i, '.jpg');
+        const webpURL = avatarURL.replace(/\.(png|gif|jpg|jpeg)(\?.*)?$/i, '.webp');
 
-        // Create format buttons
-        const pngUrl = user.displayAvatarURL({ size: 4096, extension: 'png' });
-        const jpgUrl = user.displayAvatarURL({ size: 4096, extension: 'jpg' });
-        const webpUrl = user.displayAvatarURL({ size: 4096, extension: 'webp' });
-        
-        const formatRow = new ActionRowBuilder().addComponents(
+        const card = new V2Card()
+            .setAccent('primary')
+            .setTitle(`[AVATAR ASSET] ${targetUser.tag}`, avatarType)
+            .setDescription(`**Asset Direct URL:** [View High Resolution](${avatarURL})`)
+            .addField('Formats', `[PNG](${pngURL})  •  [JPG](${jpgURL})  •  [WEBP](${webpURL})`, false)
+            .setFooter(`Requested by ${interaction.user.tag}`);
+
+        const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setLabel('PNG')
+                .setLabel('Download PNG')
                 .setStyle(ButtonStyle.Link)
-                .setURL(pngUrl),
+                .setURL(pngURL),
             new ButtonBuilder()
-                .setLabel('JPG')
+                .setLabel('Download JPG')
                 .setStyle(ButtonStyle.Link)
-                .setURL(jpgUrl),
+                .setURL(jpgURL),
             new ButtonBuilder()
-                .setLabel('WebP')
+                .setLabel('Direct Asset Link')
                 .setStyle(ButtonStyle.Link)
-                .setURL(webpUrl)
+                .setURL(avatarURL)
         );
 
-        // Add GIF button if animated
-        if (user.avatar?.startsWith('a_')) {
-            formatRow.addComponents(
-                new ButtonBuilder()
-                    .setLabel('GIF')
-                    .setStyle(ButtonStyle.Link)
-                    .setURL(user.displayAvatarURL({ size: 4096, extension: 'gif' }))
-            );
-        }
+        card.addActionRow(row);
+        await card.editReply(interaction);
 
-        const avatarToShow = (showServer && hasServerAvatar) ? serverAvatar : globalAvatar;
-
-        const embed = new WardenEmbed()
-            .setColor(member?.displayHexColor || colors.primary)
-            .setAuthor({ 
-                name: `${user.tag}'s Avatar`,
-                iconURL: user.displayAvatarURL({ dynamic: true })
-            })
-            .setImage(avatarToShow)
-            .setFooter(
-                hasServerAvatar 
-                    ? `${showServer ? '🏠 Server Avatar' : '🌐 Global Avatar'} • Use /avatar server:false to toggle`
-                    : '🌐 Global Avatar'
-            )
-            .build();
-
-        // Add toggle button if user has server avatar
-        const components = [formatRow];
-        
-        if (hasServerAvatar) {
-            const toggleRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('avatar_toggle')
-                    .setLabel(showServer ? 'Show Global Avatar' : 'Show Server Avatar')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setEmoji(showServer ? '🌐' : '🏠')
-            );
-            components.push(toggleRow);
-        }
-
-        const reply = await interaction.reply({ 
-            embeds: [embed], 
-            components,
-            fetchReply: true 
-        });
-
-        // Handle toggle button
-        if (hasServerAvatar) {
-            const collector = reply.createMessageComponentCollector({ 
-                filter: i => i.customId === 'avatar_toggle',
-                time: 120000 
-            });
-
-            let showingServer = showServer;
-
-            collector.on('collect', async i => {
-                showingServer = !showingServer;
-                
-                const newEmbed = new WardenEmbed()
-                    .setColor(member?.displayHexColor || colors.primary)
-                    .setAuthor({ 
-                        name: `${user.tag}'s Avatar`,
-                        iconURL: user.displayAvatarURL({ dynamic: true })
-                    })
-                    .setImage(showingServer ? serverAvatar : globalAvatar)
-                    .setFooter({ 
-                        text: `${showingServer ? '🏠 Server Avatar' : '🌐 Global Avatar'} • Click to toggle`
-                    })
-                    .setTimestamp();
-
-                const newToggleRow = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('avatar_toggle')
-                        .setLabel(showingServer ? 'Show Global Avatar' : 'Show Server Avatar')
-                        .setStyle(ButtonStyle.Secondary)
-                        .setEmoji(showingServer ? '🌐' : '🏠')
-                );
-
-                await i.update({ embeds: [newEmbed], components: [formatRow, newToggleRow] });
-            });
-
-            collector.on('end', async () => {
-                try {
-                    const disabledRow = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder()
-                            .setCustomId('avatar_toggle')
-                            .setLabel('Toggle Expired')
-                            .setStyle(ButtonStyle.Secondary)
-                            .setDisabled(true)
-                    );
-                    await reply.edit({ components: [formatRow, disabledRow] });
-                } catch {}
-            });
-        }
-    }
+        logger.info(`Avatar fetched for ${targetUser.tag} by ${interaction.user.tag}`);
+    },
 };

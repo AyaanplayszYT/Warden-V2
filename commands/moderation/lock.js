@@ -1,11 +1,11 @@
 const { PermissionFlagsBits, ChannelType } = require('discord.js');
-const { EmbedTemplates, WardenEmbed, emojis } = require('../../utils/embedBuilder');
+const { V2Card, V2Templates } = require('../../utils/v2Components');
 const logger = require('../../utils/logger');
 
 module.exports = {
     data: {
         name: 'lock',
-        description: 'Lock a channel to prevent members from sending messages.',
+        description: 'Lock a text channel to prevent members from sending messages.',
         options: [
             {
                 name: 'channel',
@@ -30,57 +30,57 @@ module.exports = {
         const channel = interaction.options.getChannel('channel') || interaction.channel;
         const reason = interaction.options.getString('reason') || 'No reason provided';
 
-        // Permission check
         if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Permission Denied', 'You need the **Manage Channels** permission to use this command.')],
-            });
+            return V2Templates.error(
+                'Permission Denied',
+                'You lack the required `Manage Channels` permission to execute this command.'
+            ).editReply(interaction);
         }
 
-        // Check if already locked
         const everyoneRole = interaction.guild.roles.everyone;
         const currentPerms = channel.permissionOverwrites.cache.get(everyoneRole.id);
-        
+
         if (currentPerms && currentPerms.deny.has(PermissionFlagsBits.SendMessages)) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.warning('Already Locked', `${channel} is already locked.`)],
-            });
+            return V2Templates.warning(
+                'Channel Already Locked',
+                `Channel <#${channel.id}> is already locked.`
+            ).editReply(interaction);
         }
 
         try {
             await channel.permissionOverwrites.edit(everyoneRole, {
                 SendMessages: false,
-            }, { reason: `Locked by ${interaction.user.tag} | ${reason}` });
+            }, { reason: `[Warden Channel Lock] By ${interaction.user.tag}: ${reason}` });
 
-            const embed = new WardenEmbed()
-                .setType('warning')
-                .setTitle(`${emojis.lock} Channel Locked`)
-                .setDescription(`${channel} has been locked. Members can no longer send messages.`)
-                .addField(`${emojis.moderator} Locked By`, interaction.user.tag, true)
-                .addField(`${emojis.edit} Reason`, reason, true)
-                .build();
+            const card = new V2Card()
+                .setAccent('warning')
+                .setTitle('[CHANNEL LOCK] Access Restricted')
+                .setDescription(`Channel <#${channel.id}> has been locked. Regular members are restricted from sending messages.`)
+                .addField('Enforcing Moderator', `${interaction.user.tag} (\`${interaction.user.id}\`)`, true)
+                .addField('Reason', reason, true)
+                .setTimestamp(new Date());
 
-            await interaction.editReply({ embeds: [embed] });
+            await card.editReply(interaction);
 
-            // Also send a message in the locked channel
-            await channel.send({
-                embeds: [
-                    new WardenEmbed()
-                        .setType('warning')
-                        .setTitle(`${emojis.lock} Channel Locked`)
-                        .setDescription('This channel has been locked by a moderator.')
-                        .addField(`${emojis.edit} Reason`, reason, false)
-                        .build()
-                ]
-            });
+            // Post notification inside the locked channel
+            if (channel.id !== interaction.channel.id) {
+                const noticeCard = new V2Card()
+                    .setAccent('warning')
+                    .setTitle('[LOCKDOWN NOTICE] Channel Locked')
+                    .setDescription('This channel has been placed in lockdown mode by moderation. Sending messages is temporarily disabled.')
+                    .addField('Reason', reason, false)
+                    .setFooter('Warden Security Enforcement');
+                await noticeCard.send(channel).catch(() => {});
+            }
 
-            logger.info(`${interaction.user.tag} locked #${channel.name} in ${interaction.guild.name}. Reason: ${reason}`);
+            logger.info(`${interaction.user.tag} locked channel #${channel.name}. Reason: ${reason}`);
 
         } catch (error) {
-            logger.error('Error locking channel:', error);
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Lock Failed', 'An error occurred while locking the channel.')],
-            });
+            logger.error('Error during lock command execution:', error);
+            return V2Templates.error(
+                'Execution Failure',
+                'Failed to update channel permission overrides.'
+            ).editReply(interaction);
         }
     },
 };

@@ -1,11 +1,11 @@
 const { PermissionFlagsBits, ChannelType } = require('discord.js');
-const { EmbedTemplates, WardenEmbed, emojis } = require('../../utils/embedBuilder');
+const { V2Card, V2Templates } = require('../../utils/v2Components');
 const logger = require('../../utils/logger');
 
 module.exports = {
     data: {
         name: 'unlock',
-        description: 'Unlock a channel to allow members to send messages again.',
+        description: 'Unlock a text channel to restore member messaging permissions.',
         options: [
             {
                 name: 'channel',
@@ -30,56 +30,56 @@ module.exports = {
         const channel = interaction.options.getChannel('channel') || interaction.channel;
         const reason = interaction.options.getString('reason') || 'No reason provided';
 
-        // Permission check
         if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Permission Denied', 'You need the **Manage Channels** permission to use this command.')],
-            });
+            return V2Templates.error(
+                'Permission Denied',
+                'You lack the required `Manage Channels` permission to execute this command.'
+            ).editReply(interaction);
         }
 
-        // Check if not locked
         const everyoneRole = interaction.guild.roles.everyone;
         const currentPerms = channel.permissionOverwrites.cache.get(everyoneRole.id);
-        
+
         if (!currentPerms || !currentPerms.deny.has(PermissionFlagsBits.SendMessages)) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.warning('Not Locked', `${channel} is not currently locked.`)],
-            });
+            return V2Templates.warning(
+                'Channel Not Locked',
+                `Channel <#${channel.id}> is not currently locked.`
+            ).editReply(interaction);
         }
 
         try {
             await channel.permissionOverwrites.edit(everyoneRole, {
-                SendMessages: null, // Reset to default
-            }, { reason: `Unlocked by ${interaction.user.tag} | ${reason}` });
+                SendMessages: null,
+            }, { reason: `[Warden Channel Unlock] By ${interaction.user.tag}: ${reason}` });
 
-            const embed = new WardenEmbed()
-                .setType('success')
-                .setTitle(`${emojis.unlock} Channel Unlocked`)
-                .setDescription(`${channel} has been unlocked. Members can send messages again.`)
-                .addField(`${emojis.moderator} Unlocked By`, interaction.user.tag, true)
-                .addField(`${emojis.edit} Reason`, reason, true)
-                .build();
+            const card = new V2Card()
+                .setAccent('success')
+                .setTitle('[CHANNEL UNLOCKED] Access Restored')
+                .setDescription(`Channel <#${channel.id}> has been unlocked. Member messaging permissions are restored.`)
+                .addField('Enforcing Moderator', `${interaction.user.tag} (\`${interaction.user.id}\`)`, true)
+                .addField('Reason', reason, true)
+                .setTimestamp(new Date());
 
-            await interaction.editReply({ embeds: [embed] });
+            await card.editReply(interaction);
 
-            // Also send a message in the unlocked channel
-            await channel.send({
-                embeds: [
-                    new WardenEmbed()
-                        .setType('success')
-                        .setTitle(`${emojis.unlock} Channel Unlocked`)
-                        .setDescription('This channel has been unlocked by a moderator.')
-                        .build()
-                ]
-            });
+            if (channel.id !== interaction.channel.id) {
+                const noticeCard = new V2Card()
+                    .setAccent('success')
+                    .setTitle('[LOCKDOWN LIFTED] Channel Restored')
+                    .setDescription('Normal operations have resumed. Members may now send messages.')
+                    .addField('Reason', reason, false)
+                    .setFooter('Warden Security Enforcement');
+                await noticeCard.send(channel).catch(() => {});
+            }
 
-            logger.info(`${interaction.user.tag} unlocked #${channel.name} in ${interaction.guild.name}. Reason: ${reason}`);
+            logger.info(`${interaction.user.tag} unlocked channel #${channel.name}. Reason: ${reason}`);
 
         } catch (error) {
-            logger.error('Error unlocking channel:', error);
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Unlock Failed', 'An error occurred while unlocking the channel.')],
-            });
+            logger.error('Error during unlock command execution:', error);
+            return V2Templates.error(
+                'Execution Failure',
+                'Failed to update channel permission overrides.'
+            ).editReply(interaction);
         }
     },
 };

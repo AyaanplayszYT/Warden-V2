@@ -1,5 +1,5 @@
-const { PermissionFlagsBits, ChannelType } = require('discord.js');
-const { EmbedTemplates, WardenEmbed, emojis } = require('../../utils/embedBuilder');
+const { PermissionFlagsBits } = require('discord.js');
+const { V2Card, V2Templates } = require('../../utils/v2Components');
 const logger = require('../../utils/logger');
 const fs = require('fs');
 const path = require('path');
@@ -7,7 +7,7 @@ const path = require('path');
 module.exports = {
     data: {
         name: 'purge',
-        description: 'Bulk delete messages with optional filters.',
+        description: 'Bulk delete messages from the current channel with advanced filters.',
         options: [
             {
                 name: 'amount',
@@ -19,26 +19,20 @@ module.exports = {
             },
             {
                 name: 'user',
-                description: 'Only delete messages from this user',
+                description: 'Filter deletions to messages sent by a specific user',
                 type: 6, // USER
                 required: false,
             },
             {
+                name: 'bots_only',
+                description: 'Only delete messages authored by bot applications',
+                type: 5, // BOOLEAN
+                required: false,
+            },
+            {
                 name: 'contains',
-                description: 'Only delete messages containing this text',
+                description: 'Only delete messages matching a specific text substring',
                 type: 3, // STRING
-                required: false,
-            },
-            {
-                name: 'bots',
-                description: 'Only delete messages from bots',
-                type: 5, // BOOLEAN
-                required: false,
-            },
-            {
-                name: 'attachments',
-                description: 'Only delete messages with attachments',
-                type: 5, // BOOLEAN
                 required: false,
             },
         ],
@@ -50,125 +44,93 @@ module.exports = {
 
         const amount = interaction.options.getInteger('amount');
         const targetUser = interaction.options.getUser('user');
-        const containsText = interaction.options.getString('contains');
-        const botsOnly = interaction.options.getBoolean('bots');
-        const attachmentsOnly = interaction.options.getBoolean('attachments');
+        const botsOnly = interaction.options.getBoolean('bots_only') || false;
+        const contains = interaction.options.getString('contains');
 
-        // Permission check
         if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Permission Denied', 'You need the **Manage Messages** permission to use this command.')],
-            });
+            return V2Templates.error(
+                'Permission Denied',
+                'You lack the required `Manage Messages` permission to execute this command.'
+            ).editReply(interaction);
+        }
+
+        const channel = interaction.channel;
+        const messages = await channel.messages.fetch({ limit: 100 });
+
+        const now = Date.now();
+        const twoWeeksAgo = now - 14 * 24 * 60 * 60 * 1000;
+
+        let filtered = messages.filter(m => m.createdTimestamp > twoWeeksAgo);
+
+        if (targetUser) {
+            filtered = filtered.filter(m => m.author.id === targetUser.id);
+        }
+
+        if (botsOnly) {
+            filtered = filtered.filter(m => m.author.bot);
+        }
+
+        if (contains) {
+            filtered = filtered.filter(m => m.content.toLowerCase().includes(contains.toLowerCase()));
+        }
+
+        const toDelete = Array.from(filtered.values()).slice(0, amount);
+
+        if (toDelete.length === 0) {
+            return V2Templates.warning(
+                'No Eligible Messages',
+                'No messages matched your specified criteria, or all matching messages are older than 14 days (Discord bulk delete limit).'
+            ).editReply(interaction);
         }
 
         try {
-            // Fetch messages (need to fetch more to account for filters)
-            const fetchAmount = Math.min(amount * 2, 100);
-            const messages = await interaction.channel.messages.fetch({ limit: fetchAmount });
+            const deleted = await channel.bulkDelete(toDelete, true);
+            const deletedCount = deleted.size;
 
-            // Apply filters
-            let filteredMessages = [...messages.values()];
-
-            if (targetUser) {
-                filteredMessages = filteredMessages.filter(m => m.author.id === targetUser.id);
-            }
-
-            if (containsText) {
-                filteredMessages = filteredMessages.filter(m => 
-                    m.content.toLowerCase().includes(containsText.toLowerCase())
-                );
-            }
-
-            if (botsOnly) {
-                filteredMessages = filteredMessages.filter(m => m.author.bot);
-            }
-
-            if (attachmentsOnly) {
-                filteredMessages = filteredMessages.filter(m => m.attachments.size > 0);
-            }
-
-            // Filter out messages older than 14 days (Discord limitation)
-            const twoWeeksAgo = Date.now() - (14 * 24 * 60 * 60 * 1000);
-            filteredMessages = filteredMessages.filter(m => m.createdTimestamp > twoWeeksAgo);
-
-            // Limit to requested amount
-            filteredMessages = filteredMessages.slice(0, amount);
-
-            if (filteredMessages.length === 0) {
-                return interaction.editReply({
-                    embeds: [EmbedTemplates.warning('No Messages', 'No messages matching your criteria were found.')],
-                });
-            }
-
-            // Log messages before deleting
-            const logPath = path.join(__dirname, '../../data/purgeLogs.txt');
-            let logText = `\n--- Purge by ${interaction.user.tag} (${interaction.user.id}) in #${interaction.channel.name} (${interaction.channel.id}) at ${new Date().toISOString()} ---\n`;
-            
-            for (const msg of filteredMessages) {
-                logText += `[${msg.createdAt.toISOString()}] ${msg.author?.tag || 'Unknown'} (${msg.author?.id || 'Unknown'}): ${msg.content || '[no text]'}\n`;
-                if (msg.attachments.size > 0) {
-                    msg.attachments.forEach(att => {
-                        logText += `  Attachment: ${att.url}\n`;
-                    });
-                }
-            }
-            fs.appendFileSync(logPath, logText);
-
-            // Bulk delete messages
-            const deleted = await interaction.channel.bulkDelete(filteredMessages, true);
-
-            // Create filter description
-            const filters = [];
-            if (targetUser) filters.push(`From: ${targetUser.tag}`);
-            if (containsText) filters.push(`Contains: "${containsText}"`);
-            if (botsOnly) filters.push('Bots only');
-            if (attachmentsOnly) filters.push('With attachments');
-
-            const embed = new WardenEmbed()
-                .setType('success')
-                .setTitle(`${emojis.purge} Messages Purged`)
-                .addField(`${emojis.delete} Deleted`, `**${deleted.size}** message(s)`, true)
-                .addField(`${emojis.channel} Channel`, `${interaction.channel}`, true)
-                .addField(`${emojis.moderator} Moderator`, interaction.user.tag, true)
-                .build();
-
-            if (filters.length > 0) {
-                embed.addFields({ name: `${emojis.search} Filters Applied`, value: filters.join('\n'), inline: false });
-            }
-
-            // Send ephemeral reply
-            await interaction.editReply({ embeds: [embed] });
-
-            // Log to spam log channel
+            // Log to purgeLogs.txt
+            const logEntry = `[${new Date().toISOString()}] ${interaction.user.tag} purged ${deletedCount} message(s) in #${channel.name}\n`;
             try {
-                const logChannels = JSON.parse(fs.readFileSync(path.join(__dirname, '../../data/logChannels.json'), 'utf8'));
-                if (logChannels.spamLog) {
-                    const spamLogChannel = interaction.guild.channels.cache.get(logChannels.spamLog);
-                    if (spamLogChannel) {
-                        const logEmbed = new WardenEmbed()
-                            .setType('warning')
-                            .setTitle(`${emojis.purge} Messages Purged`)
-                            .addField(`${emojis.moderator} Moderator`, `${interaction.user.tag} (${interaction.user.id})`, false)
-                            .addField(`${emojis.channel} Channel`, `${interaction.channel} (${interaction.channel.id})`, false)
-                            .addField(`${emojis.delete} Count`, `**${deleted.size}** messages deleted`, false)
-                            .build();
+                fs.appendFileSync(path.join(__dirname, '../../data/purgeLogs.txt'), logEntry);
+            } catch (err) {
+                logger.error('Failed to write to purge logs file:', err);
+            }
 
-                        if (filters.length > 0) {
-                            logEmbed.addFields({ name: `${emojis.search} Filters`, value: filters.join('\n'), inline: false });
-                        }
+            const card = new V2Card()
+                .setAccent('success')
+                .setTitle('[PURGE OPERATION COMPLETE] Messages Removed')
+                .setDescription(`Successfully purged **${deletedCount}** message(s) from <#${channel.id}>.`)
+                .addField('Executing Operator', `${interaction.user.tag} (\`${interaction.user.id}\`)`, true)
+                .addField('Target Filter', targetUser ? targetUser.tag : 'All Users', true)
+                .addField('Bot Filter', botsOnly ? 'Bots Only' : 'Disabled', true)
+                .setTimestamp(new Date());
 
-                        await spamLogChannel.send({ embeds: [logEmbed] });
-                    }
-                }
-            } catch (e) {}
+            await card.editReply(interaction);
 
-            logger.info(`${interaction.user.tag} purged ${deleted.size} messages in #${interaction.channel.name}`);
+            // Forward to mod log channel
+            await logToModChannel(interaction.guild, card);
+
+            logger.info(`${interaction.user.tag} purged ${deletedCount} messages in #${channel.name}`);
 
         } catch (error) {
-            logger.error('Error during purge command:', error);
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Purge Failed', `An error occurred: ${error.message}`)],
-            });
+            logger.error('Error during purge command execution:', error);
+            return V2Templates.error(
+                'Execution Failure',
+                'An error occurred while attempting to bulk delete messages.'
+            ).editReply(interaction);
         }
     },
 };
+
+async function logToModChannel(guild, card) {
+    try {
+        const logChannels = JSON.parse(fs.readFileSync(path.join(__dirname, '../../data/logChannels.json'), 'utf8'));
+        if (logChannels.modLog) {
+            const modLogChannel = guild.channels.cache.get(logChannels.modLog);
+            if (modLogChannel) {
+                await card.send(modLogChannel);
+            }
+        }
+    } catch (error) {
+        logger.warn('Could not dispatch log to mod channel:', error);
+    }
+}

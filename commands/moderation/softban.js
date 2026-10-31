@@ -1,5 +1,5 @@
-const { PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
-const { EmbedTemplates, WardenEmbed, emojis } = require('../../utils/embedBuilder');
+const { PermissionFlagsBits, ButtonStyle, ComponentType } = require('discord.js');
+const { V2Templates } = require('../../utils/v2Components');
 const warningsDB = require('../../utils/warningsDB');
 const logger = require('../../utils/logger');
 const fs = require('fs');
@@ -8,7 +8,7 @@ const path = require('path');
 module.exports = {
     data: {
         name: 'softban',
-        description: 'Ban and immediately unban a user to delete their messages.',
+        description: 'Ban and immediately unban a user to purge recent messages.',
         options: [
             {
                 name: 'user',
@@ -24,14 +24,20 @@ module.exports = {
             },
             {
                 name: 'delete_messages',
-                description: 'Delete messages from the past X days (1-7)',
+                description: 'Delete messages from past X days (1-7)',
                 type: 4, // INTEGER
                 required: false,
                 choices: [
-                    { name: 'Previous 1 day', value: 1 },
-                    { name: 'Previous 3 days', value: 3 },
-                    { name: 'Previous 7 days', value: 7 },
+                    { name: 'Past 24 hours (1 day)', value: 1 },
+                    { name: 'Past 3 days', value: 3 },
+                    { name: 'Past 7 days', value: 7 },
                 ],
+            },
+            {
+                name: 'silent',
+                description: 'Suppress direct message notification to user',
+                type: 5, // BOOLEAN
+                required: false,
             },
         ],
         default_member_permissions: PermissionFlagsBits.BanMembers,
@@ -42,71 +48,64 @@ module.exports = {
 
         const targetUser = interaction.options.getUser('user');
         const reason = interaction.options.getString('reason') || 'No reason provided';
-        const deleteMessageDays = interaction.options.getInteger('delete_messages') || 7;
+        const deleteMessageDays = interaction.options.getInteger('delete_messages') || 1;
+        const silent = interaction.options.getBoolean('silent') || false;
 
-        // Fetch the member
         const targetMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
 
-        // Permission checks
         if (!interaction.member.permissions.has(PermissionFlagsBits.BanMembers)) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Permission Denied', 'You need the **Ban Members** permission to use this command.')],
-            });
+            return V2Templates.error(
+                'Permission Denied',
+                'You lack the required `Ban Members` permission to execute this command.'
+            ).editReply(interaction);
         }
 
         if (targetUser.id === interaction.user.id) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Invalid Target', 'You cannot softban yourself!')],
-            });
+            return V2Templates.error(
+                'Invalid Target',
+                'Self-targeting is prohibited. You cannot softban yourself.'
+            ).editReply(interaction);
         }
 
         if (targetUser.id === interaction.client.user.id) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Invalid Target', 'I cannot softban myself!')],
-            });
+            return V2Templates.error(
+                'Invalid Target',
+                'Action rejected. The bot cannot softban its own account.'
+            ).editReply(interaction);
         }
 
         if (targetMember) {
             if (!targetMember.bannable) {
-                return interaction.editReply({
-                    embeds: [EmbedTemplates.error('Cannot Softban', 'I cannot softban this user. They may have a higher role than me.')],
-                });
+                return V2Templates.error(
+                    'Hierarchy Restriction',
+                    'Target cannot be softbanned due to role hierarchy constraints.'
+                ).editReply(interaction);
             }
 
             if (interaction.member.roles.highest.position <= targetMember.roles.highest.position) {
-                return interaction.editReply({
-                    embeds: [EmbedTemplates.error('Role Hierarchy', 'You cannot softban a user with an equal or higher role than you.')],
-                });
+                return V2Templates.error(
+                    'Hierarchy Restriction',
+                    'Target possesses a role equal to or higher than your highest role.'
+                ).editReply(interaction);
             }
         }
 
-        // Confirmation dialog
-        const confirmEmbed = new WardenEmbed()
-            .setType('warning')
-            .setTitle(`${emojis.warning} Confirm Softban`)
-            .setDescription(`Are you sure you want to softban **${targetUser.tag}**?\n\nThis will ban and immediately unban them, removing their recent messages.`)
-            .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
-            .addField(`${emojis.user} User`, `${targetUser.tag}\n\`${targetUser.id}\``, true)
-            .addField(`${emojis.delete} Delete Messages`, `Past ${deleteMessageDays} day(s)`, true)
-            .addField(`${emojis.edit} Reason`, reason, false)
-            .build();
-
-        const confirmRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('softban_confirm')
-                .setLabel('Softban User')
-                .setStyle(ButtonStyle.Danger)
-                .setEmoji('🔨'),
-            new ButtonBuilder()
-                .setCustomId('softban_cancel')
-                .setLabel('Cancel')
-                .setStyle(ButtonStyle.Secondary)
-                .setEmoji('❌')
-        );
+        const { card: confirmCard, row: confirmRow } = V2Templates.confirmation({
+            title: 'Confirm Softban Enforcement',
+            description: `Review parameters below and confirm softban (ban + immediate unban) for **${targetUser.tag}**.`,
+            fields: [
+                { name: 'Target Account', value: `${targetUser.tag} (\`${targetUser.id}\`)`, inline: true },
+                { name: 'Purge Window', value: `Past ${deleteMessageDays} day(s)`, inline: true },
+                { name: 'Reason', value: reason, inline: true },
+            ],
+            confirmLabel: 'Confirm Softban',
+            cancelLabel: 'Cancel',
+            confirmStyle: ButtonStyle.Danger,
+        });
 
         const confirmMessage = await interaction.editReply({
-            embeds: [confirmEmbed],
-            components: [confirmRow],
+            ...confirmCard.toPayload(),
+            components: [confirmCard.buildContainer()]
         });
 
         try {
@@ -116,40 +115,40 @@ module.exports = {
                 time: 30000,
             });
 
-            if (buttonInteraction.customId === 'softban_cancel') {
-                const cancelEmbed = EmbedTemplates.info('Softban Cancelled', `The softban action for **${targetUser.tag}** has been cancelled.`);
-                return buttonInteraction.update({ embeds: [cancelEmbed], components: [] });
+            if (buttonInteraction.customId === 'confirm_no') {
+                return V2Templates.info(
+                    'Action Aborted',
+                    `Softban enforcement for **${targetUser.tag}** was cancelled by operator.`
+                ).update(buttonInteraction);
             }
 
             await buttonInteraction.deferUpdate();
 
-            // DM the user before softbanning
             let dmSent = false;
-            if (targetMember) {
+            if (!silent && targetMember) {
                 try {
-                    const dmEmbed = EmbedTemplates.modDM({
-                        action: 'kick',
+                    const dmCard = V2Templates.modDM({
+                        action: 'ban',
                         guildName: interaction.guild.name,
-                        guildIcon: interaction.guild.iconURL({ dynamic: true }),
                         moderator: interaction.user,
-                        reason: `${reason} (Softban)`,
+                        reason: `[Softban] ${reason}`,
                     });
-                    await targetUser.send({ embeds: [dmEmbed] });
+                    await dmCard.send(targetUser);
                     dmSent = true;
                 } catch (error) {
-                    logger.warn(`Could not DM ${targetUser.tag} about their softban.`);
+                    logger.warn(`Could not deliver softban notification DM to ${targetUser.tag}.`);
                 }
             }
 
-            // Ban and immediately unban
+            // Ban with message deletion
             await interaction.guild.members.ban(targetUser.id, {
                 deleteMessageSeconds: deleteMessageDays * 24 * 60 * 60,
-                reason: `Softbanned by ${interaction.user.tag} | ${reason}`,
+                reason: `[Warden Softban] By ${interaction.user.tag}: ${reason}`,
             });
 
-            await interaction.guild.members.unban(targetUser.id, `Softban complete - Unbanned after message deletion`);
+            // Immediately unban
+            await interaction.guild.bans.remove(targetUser.id, `[Warden Softban Complete] Unbanned automatically.`);
 
-            // Log to warnings database
             const warning = warningsDB.add(interaction.guild.id, targetUser.id, {
                 moderatorId: interaction.user.id,
                 moderatorTag: interaction.user.tag,
@@ -157,8 +156,7 @@ module.exports = {
                 type: 'softban',
             });
 
-            // Create success embed
-            const successEmbed = EmbedTemplates.modAction({
+            const successCard = V2Templates.modAction({
                 action: 'softban',
                 target: targetUser,
                 moderator: interaction.user,
@@ -167,39 +165,38 @@ module.exports = {
                 dmSent,
             });
 
-            // Log to mod log channel
-            await logToModChannel(interaction.guild, successEmbed);
+            await logToModChannel(interaction.guild, successCard);
+            await successCard.editReply(buttonInteraction);
 
-            await buttonInteraction.editReply({
-                embeds: [successEmbed],
-                components: [],
-            });
-
-            logger.info(`${interaction.user.tag} softbanned ${targetUser.tag} from ${interaction.guild.name}. Reason: ${reason}`);
+            logger.info(`${interaction.user.tag} softbanned ${targetUser.tag}. Purged: ${deleteMessageDays}d. Reason: ${reason}`);
 
         } catch (error) {
             if (error.code === 'InteractionCollectorError') {
-                const timeoutEmbed = EmbedTemplates.error('Timed Out', 'Softban confirmation timed out. No action was taken.');
-                return interaction.editReply({ embeds: [timeoutEmbed], components: [] });
+                return V2Templates.warning(
+                    'Operation Timed Out',
+                    'Confirmation expired after 30 seconds of inactivity. No changes were applied.'
+                ).editReply(interaction);
             }
 
-            logger.error('Error during softban command:', error);
-            const errorEmbed = EmbedTemplates.error('Softban Failed', 'An error occurred while trying to softban this user.');
-            return interaction.editReply({ embeds: [errorEmbed], components: [] });
+            logger.error('Error during softban command execution:', error);
+            return V2Templates.error(
+                'Execution Failure',
+                'An unexpected error occurred while executing the softban action.'
+            ).editReply(interaction);
         }
     },
 };
 
-async function logToModChannel(guild, embed) {
+async function logToModChannel(guild, card) {
     try {
         const logChannels = JSON.parse(fs.readFileSync(path.join(__dirname, '../../data/logChannels.json'), 'utf8'));
         if (logChannels.modLog) {
             const modLogChannel = guild.channels.cache.get(logChannels.modLog);
             if (modLogChannel) {
-                await modLogChannel.send({ embeds: [embed] });
+                await card.send(modLogChannel);
             }
         }
     } catch (error) {
-        logger.warn('Could not log to mod channel:', error);
+        logger.warn('Could not dispatch log to mod channel:', error);
     }
 }

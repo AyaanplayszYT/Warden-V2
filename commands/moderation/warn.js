@@ -1,5 +1,5 @@
 const { PermissionFlagsBits } = require('discord.js');
-const { EmbedTemplates, WardenEmbed, emojis } = require('../../utils/embedBuilder');
+const { V2Templates } = require('../../utils/v2Components');
 const warningsDB = require('../../utils/warningsDB');
 const logger = require('../../utils/logger');
 const { maxWarnings } = require('../../config/config.json');
@@ -9,7 +9,7 @@ const path = require('path');
 module.exports = {
     data: {
         name: 'warn',
-        description: 'Warn a user for rule violations.',
+        description: 'Issue an official recorded warning to a user.',
         options: [
             {
                 name: 'user',
@@ -25,7 +25,7 @@ module.exports = {
             },
             {
                 name: 'silent',
-                description: 'Do not notify the user via DM',
+                description: 'Suppress direct message notification to user',
                 type: 5, // BOOLEAN
                 required: false,
             },
@@ -40,41 +40,59 @@ module.exports = {
         const reason = interaction.options.getString('reason') || 'No reason provided';
         const silent = interaction.options.getBoolean('silent') || false;
 
-        // Fetch the member
         const targetMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
 
-        // Permission checks
         if (!interaction.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Permission Denied', 'You need the **Moderate Members** permission to use this command.')],
-            });
+            return V2Templates.error(
+                'Permission Denied',
+                'You lack the required `Moderate Members` permission to execute this command.'
+            ).editReply(interaction);
         }
 
         if (!targetMember) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('User Not Found', 'This user is not in the server.')],
-            });
+            return V2Templates.error(
+                'Member Not Found',
+                `Target **${targetUser.tag}** (\`${targetUser.id}\`) is not currently present in this server.`
+            ).editReply(interaction);
         }
 
         if (targetUser.id === interaction.user.id) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Invalid Target', 'You cannot warn yourself!')],
-            });
+            return V2Templates.error(
+                'Invalid Target',
+                'Self-targeting is prohibited. You cannot warn yourself.'
+            ).editReply(interaction);
         }
 
-        if (targetUser.bot) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Invalid Target', 'You cannot warn bots!')],
-            });
+        if (targetUser.id === interaction.client.user.id) {
+            return V2Templates.error(
+                'Invalid Target',
+                'Action rejected. The bot cannot warn its own account.'
+            ).editReply(interaction);
         }
 
-        if (interaction.member.roles.highest.position <= targetMember.roles.highest.position && interaction.guild.ownerId !== interaction.user.id) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Role Hierarchy', 'You cannot warn a user with an equal or higher role than you.')],
-            });
+        if (interaction.member.roles.highest.position <= targetMember.roles.highest.position) {
+            return V2Templates.error(
+                'Hierarchy Restriction',
+                'Target possesses a role equal to or higher than your highest role.'
+            ).editReply(interaction);
         }
 
-        // Add warning to database
+        let dmSent = false;
+        if (!silent) {
+            try {
+                const dmCard = V2Templates.modDM({
+                    action: 'warn',
+                    guildName: interaction.guild.name,
+                    moderator: interaction.user,
+                    reason,
+                });
+                await dmCard.send(targetUser);
+                dmSent = true;
+            } catch (error) {
+                logger.warn(`Could not deliver warning notification DM to ${targetUser.tag}.`);
+            }
+        }
+
         const warning = warningsDB.add(interaction.guild.id, targetUser.id, {
             moderatorId: interaction.user.id,
             moderatorTag: interaction.user.tag,
@@ -82,111 +100,38 @@ module.exports = {
             type: 'warn',
         });
 
-        // Get total warnings for this user
-        const totalWarnings = warningsDB.count(interaction.guild.id, targetUser.id);
-        const maxWarns = maxWarnings || 5;
+        const userWarnings = warningsDB.get(interaction.guild.id, targetUser.id);
+        const warningCount = userWarnings.length;
 
-        // DM the user (if not silent)
-        let dmSent = false;
-        if (!silent) {
-            try {
-                const dmEmbed = EmbedTemplates.modDM({
-                    action: 'warn',
-                    guildName: interaction.guild.name,
-                    guildIcon: interaction.guild.iconURL({ dynamic: true }),
-                    moderator: interaction.user,
-                    reason,
-                });
-                
-                // Add warning count to DM
-                dmEmbed.fields.push({
-                    name: `${emojis.warning} Warning Count`,
-                    value: `You now have **${totalWarnings}/${maxWarns}** warnings in this server.`,
-                    inline: false,
-                });
-
-                if (totalWarnings >= maxWarns) {
-                    dmEmbed.fields.push({
-                        name: `${emojis.error} Maximum Warnings Reached`,
-                        value: 'You may face additional consequences if you continue to violate the rules.',
-                        inline: false,
-                    });
-                }
-
-                await targetUser.send({ embeds: [dmEmbed] });
-                dmSent = true;
-            } catch (error) {
-                logger.warn(`Could not DM ${targetUser.tag} about their warning.`);
-            }
-        }
-
-        // Create success embed
-        const successEmbed = EmbedTemplates.modAction({
+        const card = V2Templates.modAction({
             action: 'warn',
             target: targetUser,
             moderator: interaction.user,
             reason,
             caseId: warning.caseId,
             dmSent,
+            extraFields: [
+                { name: 'Total Warning Count', value: `${warningCount} / ${maxWarnings || 5}`, inline: true },
+            ],
         });
 
-        // Add warning count field
-        successEmbed.fields.push({
-            name: `${emojis.stats} Total Warnings`,
-            value: `**${totalWarnings}/${maxWarns}**`,
-            inline: true,
-        });
+        await logToModChannel(interaction.guild, card);
+        await card.editReply(interaction);
 
-        // Check if auto-action should be taken
-        let autoAction = null;
-        if (totalWarnings >= maxWarns) {
-            // Auto-mute for 1 hour when max warnings reached
-            try {
-                if (targetMember.moderatable) {
-                    await targetMember.timeout(60 * 60 * 1000, `Auto-mute: Reached ${maxWarns} warnings`);
-                    autoAction = `User has been automatically muted for 1 hour for reaching ${maxWarns} warnings.`;
-                    
-                    warningsDB.add(interaction.guild.id, targetUser.id, {
-                        moderatorId: interaction.client.user.id,
-                        moderatorTag: interaction.client.user.tag,
-                        reason: `Auto-mute: Reached ${maxWarns} warnings`,
-                        type: 'mute',
-                    });
-                }
-            } catch (error) {
-                logger.error('Failed to auto-mute user:', error);
-            }
-        }
-
-        if (autoAction) {
-            successEmbed.fields.push({
-                name: `${emojis.timeout} Auto-Action`,
-                value: autoAction,
-                inline: false,
-            });
-        }
-
-        // Log to mod log channel
-        await logToModChannel(interaction.guild, successEmbed);
-
-        await interaction.editReply({
-            embeds: [successEmbed],
-        });
-
-        logger.info(`${interaction.user.tag} warned ${targetUser.tag} in ${interaction.guild.name}. Reason: ${reason}. Total warnings: ${totalWarnings}`);
+        logger.info(`${interaction.user.tag} warned ${targetUser.tag} (Case #${warning.caseId}). Total: ${warningCount}`);
     },
 };
 
-async function logToModChannel(guild, embed) {
+async function logToModChannel(guild, card) {
     try {
         const logChannels = JSON.parse(fs.readFileSync(path.join(__dirname, '../../data/logChannels.json'), 'utf8'));
         if (logChannels.modLog) {
             const modLogChannel = guild.channels.cache.get(logChannels.modLog);
             if (modLogChannel) {
-                await modLogChannel.send({ embeds: [embed] });
+                await card.send(modLogChannel);
             }
         }
     } catch (error) {
-        logger.warn('Could not log to mod channel:', error);
+        logger.warn('Could not dispatch log to mod channel:', error);
     }
 }

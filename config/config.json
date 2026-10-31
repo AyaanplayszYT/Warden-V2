@@ -11,9 +11,9 @@
   "badWordsEnabled": false,
   "welcomeChannelId": "",
   "autoRoleId": "",
-  "embedFooter": "Warden Bot • Protecting Your Server",
+  "embedFooter": "Warden | Security & Utility",
   "embedThumbnail": "",
   "supportServer": "",
   "inviteLink": "",
-  "version": "2.0.0"
+  "version": "4.0.0"
 }

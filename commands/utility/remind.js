@@ -1,14 +1,13 @@
-const { SlashCommandBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js');
-const { WardenEmbed, EmbedTemplates, colors, emojis } = require('../../utils/embedBuilder');
+const { SlashCommandBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, ComponentType } = require('discord.js');
+const { V2Card, V2Templates } = require('../../utils/v2Components');
 const ms = require('ms');
 const fs = require('fs');
 const path = require('path');
+const logger = require('../../utils/logger');
 
-// Reminders storage
 const remindersPath = path.join(__dirname, '../../data/reminders.json');
 let reminders = [];
 
-// Load reminders on startup
 try {
     if (fs.existsSync(remindersPath)) {
         reminders = JSON.parse(fs.readFileSync(remindersPath, 'utf8'));
@@ -23,42 +22,42 @@ function saveReminders() {
 
 module.exports = {
     name: 'remind',
-    description: 'Set a reminder for yourself',
-    usage: 'remind <time> <message>',
+    description: 'Schedule automated reminders with time triggers.',
+    usage: 'remind <set|list|clear|cancel>',
     category: 'utility',
     reminders,
     data: new SlashCommandBuilder()
         .setName('remind')
-        .setDescription('Set and manage reminders')
+        .setDescription('Schedule and manage automated reminders')
         .addSubcommand(subcommand =>
             subcommand
                 .setName('set')
-                .setDescription('Set a new reminder')
+                .setDescription('Register a new automated reminder')
                 .addStringOption(option =>
                     option.setName('time')
-                        .setDescription('When to remind you (e.g., 1h, 30m, 2d)')
+                        .setDescription('When to remind you (e.g., 10m, 1h, 2d)')
                         .setRequired(true)
                 )
                 .addStringOption(option =>
                     option.setName('message')
-                        .setDescription('What to remind you about')
+                        .setDescription('Reminder message text')
                         .setRequired(true)
                 )
         )
         .addSubcommand(subcommand =>
             subcommand
                 .setName('list')
-                .setDescription('List your active reminders')
+                .setDescription('List all your active pending reminders')
         )
         .addSubcommand(subcommand =>
             subcommand
                 .setName('clear')
-                .setDescription('Clear all your reminders')
+                .setDescription('Clear all your scheduled reminders')
         )
         .addSubcommand(subcommand =>
             subcommand
                 .setName('cancel')
-                .setDescription('Cancel a specific reminder')
+                .setDescription('Cancel a specific reminder by ID')
                 .addIntegerOption(option =>
                     option.setName('id')
                         .setDescription('The reminder ID to cancel')
@@ -74,170 +73,120 @@ module.exports = {
             case 'set': {
                 const timeInput = interaction.options.getString('time');
                 const message = interaction.options.getString('message');
-                
+
                 const duration = ms(timeInput);
-                
+
                 if (!duration || duration < 60000) {
-                    return interaction.reply({
-                        embeds: [EmbedTemplates.error(
-                            'Invalid time format! Minimum is 1 minute.\n\n' +
-                            '**Examples:**\n' +
-                            '• `1h` - 1 hour\n' +
-                            '• `30m` - 30 minutes\n' +
-                            '• `2d` - 2 days\n' +
-                            '• `1w` - 1 week'
-                        )],
-                        ephemeral: true
-                    });
+                    return V2Templates.error(
+                        'Invalid Duration Format',
+                        'Minimum reminder duration is `1 minute`.\n\n**Valid Syntax Examples:**\n• `10m` — 10 minutes\n• `1h` — 1 hour\n• `1d` — 1 day\n• `1w` — 1 week'
+                    ).reply(interaction, { ephemeral: true });
                 }
 
                 if (duration > 30 * 24 * 60 * 60 * 1000) {
-                    return interaction.reply({
-                        embeds: [EmbedTemplates.error('Duration Too Long', 'Reminders cannot be set for more than 30 days!')],
-                        ephemeral: true
-                    });
+                    return V2Templates.error(
+                        'Duration Limit Exceeded',
+                        'Reminders cannot be scheduled more than 30 days into the future.'
+                    ).reply(interaction, { ephemeral: true });
                 }
 
                 const reminderTime = Date.now() + duration;
                 const reminder = {
                     id: Date.now(),
-                    oderId: userId,
                     userId,
                     channelId: interaction.channel.id,
                     guildId: interaction.guild.id,
                     message,
                     createdAt: Date.now(),
-                    remindAt: reminderTime
+                    remindAt: reminderTime,
                 };
 
                 reminders.push(reminder);
                 saveReminders();
 
-                // Set timeout for reminder
                 scheduleReminder(client, reminder);
 
-                const embed = new WardenEmbed()
-                    .setColor(colors.success)
-                    .setAuthor({ 
-                        name: 'Reminder Set',
-                        iconURL: interaction.user.displayAvatarURL({ dynamic: true })
-                    })
-                    .setDescription(`${emojis.success} I'll remind you in **${ms(duration, { long: true })}**`)
-                    .addFields(
-                        {
-                            name: '📝 Reminder',
-                            value: message.substring(0, 1024),
-                            inline: false
-                        },
-                        {
-                            name: '⏰ Time',
-                            value: `<t:${Math.floor(reminderTime / 1000)}:F> (<t:${Math.floor(reminderTime / 1000)}:R>)`,
-                            inline: false
-                        }
-                    )
-                    .setFooter({ text: `Reminder ID: ${reminder.id}` })
-                    .setTimestamp();
+                const card = new V2Card()
+                    .setAccent('success')
+                    .setTitle('[REMINDER REGISTERED] Automated Alert Set')
+                    .setDescription(`Warden will deliver this reminder in **${ms(duration, { long: true })}**.`)
+                    .addField('Reminder Content', message.substring(0, 1024), false)
+                    .addField('Scheduled Trigger Time', `<t:${Math.floor(reminderTime / 1000)}:F> (<t:${Math.floor(reminderTime / 1000)}:R>)`, false)
+                    .setFooter(`Reminder ID: ${reminder.id}`);
 
-                return interaction.reply({ embeds: [embed] });
+                return card.reply(interaction);
             }
 
             case 'list': {
                 const userReminders = reminders.filter(r => r.userId === userId);
-                
+
                 if (userReminders.length === 0) {
-                    return interaction.reply({
-                        embeds: [EmbedTemplates.info('No Reminders', 'You have no active reminders.')],
-                        ephemeral: true
-                    });
+                    return V2Templates.info(
+                        'No Active Reminders',
+                        'You currently have zero scheduled reminders pending in queue.'
+                    ).reply(interaction, { ephemeral: true });
                 }
 
-                const embed = new WardenEmbed()
-                    .setColor(colors.primary)
-                    .setAuthor({ 
-                        name: 'Your Reminders',
-                        iconURL: interaction.user.displayAvatarURL({ dynamic: true })
-                    })
+                const card = new V2Card()
+                    .setAccent('primary')
+                    .setTitle(`[ACTIVE REMINDERS] ${interaction.user.tag}`)
                     .setDescription(
-                        userReminders.slice(0, 10).map((r, i) => 
-                            `**${i + 1}.** ${r.message.substring(0, 50)}${r.message.length > 50 ? '...' : ''}\n` +
-                            `   ⏰ <t:${Math.floor(r.remindAt / 1000)}:R> • ID: \`${r.id}\``
+                        userReminders.slice(0, 10).map((r, i) =>
+                            `**${i + 1}.** ${r.message.substring(0, 60)}${r.message.length > 60 ? '...' : ''}\n` +
+                            `   Trigger: <t:${Math.floor(r.remindAt / 1000)}:R> • ID: \`${r.id}\``
                         ).join('\n\n')
                     )
-                    .setFooter({ 
-                        text: userReminders.length > 10 
-                            ? `Showing 10 of ${userReminders.length} reminders` 
-                            : `${userReminders.length} reminder${userReminders.length !== 1 ? 's' : ''}`
-                    })
-                    .setTimestamp();
+                    .setFooter(`Total Reminders: ${userReminders.length}`);
 
-                return interaction.reply({ embeds: [embed], ephemeral: true });
+                return card.reply(interaction, { ephemeral: true });
             }
 
             case 'clear': {
                 const userReminders = reminders.filter(r => r.userId === userId);
-                
+
                 if (userReminders.length === 0) {
-                    return interaction.reply({
-                        embeds: [EmbedTemplates.info('No Reminders', 'You have no reminders to clear.')],
-                        ephemeral: true
-                    });
+                    return V2Templates.info(
+                        'No Reminders to Clear',
+                        'You currently have no scheduled reminders.'
+                    ).reply(interaction, { ephemeral: true });
                 }
 
-                const confirmRow = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('remind_clear_confirm')
-                        .setLabel(`Clear ${userReminders.length} Reminder${userReminders.length !== 1 ? 's' : ''}`)
-                        .setStyle(ButtonStyle.Danger)
-                        .setEmoji('🗑️'),
-                    new ButtonBuilder()
-                        .setCustomId('remind_clear_cancel')
-                        .setLabel('Cancel')
-                        .setStyle(ButtonStyle.Secondary)
-                );
-
-                const confirmEmbed = new WardenEmbed()
-                    .setColor(colors.warning)
-                    .setTitle('⚠️ Clear All Reminders?')
-                    .setDescription(
-                        `Are you sure you want to clear **${userReminders.length}** reminder${userReminders.length !== 1 ? 's' : ''}?\n\n` +
-                        `This action cannot be undone.`
-                    );
-
-                const reply = await interaction.reply({ 
-                    embeds: [confirmEmbed], 
-                    components: [confirmRow],
-                    fetchReply: true,
-                    ephemeral: true 
+                const { card: confirmCard, row: confirmRow } = V2Templates.confirmation({
+                    title: 'Clear All Scheduled Reminders',
+                    description: `Are you sure you want to permanently clear all **${userReminders.length}** pending reminder(s)?`,
+                    confirmLabel: `Clear ${userReminders.length} Reminder(s)`,
+                    cancelLabel: 'Keep Reminders',
+                    confirmStyle: ButtonStyle.Danger,
                 });
 
-                const collector = reply.createMessageComponentCollector({ 
+                const replyMsg = await interaction.reply({
+                    ...confirmCard.toPayload(),
+                    components: [confirmCard.buildContainer()],
+                    ephemeral: true,
+                    fetchReply: true,
+                });
+
+                const collector = replyMsg.createMessageComponentCollector({
+                    componentType: ComponentType.Button,
                     filter: i => i.user.id === userId,
                     time: 30000,
-                    max: 1
+                    max: 1,
                 });
 
                 collector.on('collect', async i => {
-                    if (i.customId === 'remind_clear_confirm') {
+                    if (i.customId === 'confirm_yes') {
                         reminders = reminders.filter(r => r.userId !== userId);
                         saveReminders();
-                        
-                        await i.update({
-                            embeds: [EmbedTemplates.success('Cleared', `Cleared ${userReminders.length} reminder${userReminders.length !== 1 ? 's' : ''}!`)],
-                            components: []
-                        });
-                    } else {
-                        await i.update({
-                            embeds: [EmbedTemplates.info('Cancelled', 'Action was cancelled.')],
-                            components: []
-                        });
-                    }
-                });
 
-                collector.on('end', async (collected, reason) => {
-                    if (reason === 'time' && collected.size === 0) {
-                        await reply.edit({
-                            components: []
-                        }).catch(() => {});
+                        return V2Templates.success(
+                            'Reminders Cleared',
+                            `All **${userReminders.length}** scheduled reminder(s) have been cancelled.`
+                        ).update(i);
+                    } else {
+                        return V2Templates.info(
+                            'Action Aborted',
+                            'Reminder queue remains active and unmodified.'
+                        ).update(i);
                     }
                 });
 
@@ -247,55 +196,43 @@ module.exports = {
             case 'cancel': {
                 const reminderId = interaction.options.getInteger('id');
                 const reminderIndex = reminders.findIndex(r => r.id === reminderId && r.userId === userId);
-                
+
                 if (reminderIndex === -1) {
-                    return interaction.reply({
-                        embeds: [EmbedTemplates.error('Not Found', 'Reminder not found or you don\'t have permission to cancel it.')],
-                        ephemeral: true
-                    });
+                    return V2Templates.error(
+                        'Reminder Not Found',
+                        'No pending reminder matching that ID was found under your account.'
+                    ).reply(interaction, { ephemeral: true });
                 }
 
-                const cancelledReminder = reminders[reminderIndex];
+                const cancelled = reminders[reminderIndex];
                 reminders.splice(reminderIndex, 1);
                 saveReminders();
 
-                const embed = new WardenEmbed()
-                    .setColor(colors.success)
-                    .setAuthor({ name: 'Reminder Cancelled', iconURL: interaction.user.displayAvatarURL({ dynamic: true }) })
-                    .setDescription(`${emojis.success} Successfully cancelled the reminder.`)
-                    .addFields({
-                        name: '📝 Cancelled Reminder',
-                        value: cancelledReminder.message.substring(0, 1024),
-                        inline: false
-                    })
-                    .setTimestamp();
-
-                return interaction.reply({ embeds: [embed], ephemeral: true });
+                return V2Templates.success(
+                    'Reminder Cancelled',
+                    `Reminder \`#${cancelled.id}\` ("${cancelled.message.substring(0, 40)}") has been removed.`
+                ).reply(interaction, { ephemeral: true });
             }
         }
     },
 
-    // Initialize reminders on bot startup
     initReminders(client) {
-        // Clean up expired reminders
         const now = Date.now();
         reminders = reminders.filter(r => r.remindAt > now);
         saveReminders();
 
-        // Schedule all pending reminders
         reminders.forEach(reminder => {
             scheduleReminder(client, reminder);
         });
 
-        console.log(`📅 Loaded ${reminders.length} pending reminders`);
-    }
+        logger.info(`Loaded ${reminders.length} pending reminders`);
+    },
 };
 
 function scheduleReminder(client, reminder) {
     const delay = reminder.remindAt - Date.now();
-    
+
     if (delay <= 0) {
-        // Reminder already passed, remove it
         const index = reminders.findIndex(r => r.id === reminder.id);
         if (index !== -1) {
             reminders.splice(index, 1);
@@ -308,45 +245,34 @@ function scheduleReminder(client, reminder) {
         try {
             const channel = await client.channels.fetch(reminder.channelId).catch(() => null);
             const user = await client.users.fetch(reminder.userId).catch(() => null);
-            
+
             if (!user) return;
 
-            const embed = new WardenEmbed()
-                .setColor(colors.info)
-                .setAuthor({ 
-                    name: '⏰ Reminder!',
-                    iconURL: user.displayAvatarURL({ dynamic: true })
-                })
+            const card = new V2Card()
+                .setAccent('info')
+                .setTitle('[REMINDER ALERT] Scheduled Notification')
                 .setDescription(reminder.message)
-                .addFields({
-                    name: '📅 Set',
-                    value: `<t:${Math.floor(reminder.createdAt / 1000)}:R>`,
-                    inline: true
-                })
-                .setTimestamp();
+                .addField('Scheduled', `<t:${Math.floor(reminder.createdAt / 1000)}:R>`, true)
+                .setFooter('Warden Automated Reminders');
 
-            // Try to send in channel first
             if (channel) {
                 await channel.send({
                     content: `<@${reminder.userId}>`,
-                    embeds: [embed]
+                    ...card.toPayload()
                 }).catch(() => {
-                    // If can't send in channel, DM the user
-                    user.send({ embeds: [embed] }).catch(() => {});
+                    card.send(user).catch(() => {});
                 });
             } else {
-                // DM the user
-                await user.send({ embeds: [embed] }).catch(() => {});
+                await card.send(user).catch(() => {});
             }
 
-            // Remove from storage
             const index = reminders.findIndex(r => r.id === reminder.id);
             if (index !== -1) {
                 reminders.splice(index, 1);
                 saveReminders();
             }
         } catch (error) {
-            console.error('Error sending reminder:', error);
+            logger.error('Error delivering scheduled reminder:', error);
         }
-    }, Math.min(delay, 2147483647)); // Max setTimeout delay
+    }, Math.min(delay, 2147483647));
 }

@@ -1,5 +1,5 @@
-const { PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
-const { EmbedTemplates, WardenEmbed, emojis } = require('../../utils/embedBuilder');
+const { PermissionFlagsBits, ButtonStyle, ComponentType } = require('discord.js');
+const { V2Templates } = require('../../utils/v2Components');
 const warningsDB = require('../../utils/warningsDB');
 const logger = require('../../utils/logger');
 const fs = require('fs');
@@ -8,7 +8,7 @@ const path = require('path');
 module.exports = {
     data: {
         name: 'kick',
-        description: 'Kick a user from the server.',
+        description: 'Remove a member from the server with audit logging.',
         options: [
             {
                 name: 'user',
@@ -24,7 +24,7 @@ module.exports = {
             },
             {
                 name: 'silent',
-                description: 'Do not notify the user via DM',
+                description: 'Suppress direct message notification to user',
                 type: 5, // BOOLEAN
                 required: false,
             },
@@ -39,72 +39,65 @@ module.exports = {
         const reason = interaction.options.getString('reason') || 'No reason provided';
         const silent = interaction.options.getBoolean('silent') || false;
 
-        // Fetch the member
         const targetMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
 
-        // Permission checks
         if (!interaction.member.permissions.has(PermissionFlagsBits.KickMembers)) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Permission Denied', 'You need the **Kick Members** permission to use this command.')],
-            });
+            return V2Templates.error(
+                'Permission Denied',
+                'You lack the required `Kick Members` permission to execute this command.'
+            ).editReply(interaction);
         }
 
         if (!targetMember) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('User Not Found', 'This user is not in the server.')],
-            });
+            return V2Templates.error(
+                'Member Not Found',
+                `Target **${targetUser.tag}** (\`${targetUser.id}\`) is not currently present in this server.`
+            ).editReply(interaction);
         }
 
         if (targetUser.id === interaction.user.id) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Invalid Target', 'You cannot kick yourself!')],
-            });
+            return V2Templates.error(
+                'Invalid Target',
+                'Self-targeting is prohibited. You cannot kick yourself.'
+            ).editReply(interaction);
         }
 
         if (targetUser.id === interaction.client.user.id) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Invalid Target', 'I cannot kick myself!')],
-            });
+            return V2Templates.error(
+                'Invalid Target',
+                'Action rejected. The bot cannot kick its own account.'
+            ).editReply(interaction);
         }
 
         if (!targetMember.kickable) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Cannot Kick', 'I cannot kick this user. They may have a higher role than me.')],
-            });
+            return V2Templates.error(
+                'Hierarchy Restriction',
+                'Target cannot be kicked due to role hierarchy constraints or missing administrative permissions.'
+            ).editReply(interaction);
         }
 
         if (interaction.member.roles.highest.position <= targetMember.roles.highest.position) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Role Hierarchy', 'You cannot kick a user with an equal or higher role than you.')],
-            });
+            return V2Templates.error(
+                'Hierarchy Restriction',
+                'Target possesses a role equal to or higher than your highest role.'
+            ).editReply(interaction);
         }
 
-        // Confirmation dialog
-        const confirmEmbed = new WardenEmbed()
-            .setType('warning')
-            .setTitle(`${emojis.warning} Confirm Kick`)
-            .setDescription(`Are you sure you want to kick **${targetUser.tag}**?`)
-            .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
-            .addField(`${emojis.user} User`, `${targetUser.tag}\n\`${targetUser.id}\``, true)
-            .addField(`${emojis.edit} Reason`, reason, true)
-            .build();
-
-        const confirmRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('kick_confirm')
-                .setLabel('Kick User')
-                .setStyle(ButtonStyle.Danger)
-                .setEmoji('👢'),
-            new ButtonBuilder()
-                .setCustomId('kick_cancel')
-                .setLabel('Cancel')
-                .setStyle(ButtonStyle.Secondary)
-                .setEmoji('❌')
-        );
+        const { card: confirmCard, row: confirmRow } = V2Templates.confirmation({
+            title: 'Confirm Kick Enforcement',
+            description: `Review the moderation parameters below and confirm removal for **${targetUser.tag}**.`,
+            fields: [
+                { name: 'Target Account', value: `${targetUser.tag} (\`${targetUser.id}\`)`, inline: true },
+                { name: 'Reason', value: reason, inline: true },
+            ],
+            confirmLabel: 'Confirm Kick',
+            cancelLabel: 'Cancel',
+            confirmStyle: ButtonStyle.Danger,
+        });
 
         const confirmMessage = await interaction.editReply({
-            embeds: [confirmEmbed],
-            components: [confirmRow],
+            ...confirmCard.toPayload(),
+            components: [confirmCard.buildContainer()]
         });
 
         try {
@@ -114,35 +107,33 @@ module.exports = {
                 time: 30000,
             });
 
-            if (buttonInteraction.customId === 'kick_cancel') {
-                const cancelEmbed = EmbedTemplates.info('Kick Cancelled', `The kick action for **${targetUser.tag}** has been cancelled.`);
-                return buttonInteraction.update({ embeds: [cancelEmbed], components: [] });
+            if (buttonInteraction.customId === 'confirm_no') {
+                return V2Templates.info(
+                    'Action Aborted',
+                    `Kick enforcement for **${targetUser.tag}** was cancelled by operator.`
+                ).update(buttonInteraction);
             }
 
             await buttonInteraction.deferUpdate();
 
-            // DM the user before kicking (if not silent)
             let dmSent = false;
             if (!silent) {
                 try {
-                    const dmEmbed = EmbedTemplates.modDM({
+                    const dmCard = V2Templates.modDM({
                         action: 'kick',
                         guildName: interaction.guild.name,
-                        guildIcon: interaction.guild.iconURL({ dynamic: true }),
                         moderator: interaction.user,
                         reason,
                     });
-                    await targetUser.send({ embeds: [dmEmbed] });
+                    await dmCard.send(targetUser);
                     dmSent = true;
                 } catch (error) {
-                    logger.warn(`Could not DM ${targetUser.tag} about their kick.`);
+                    logger.warn(`Could not deliver kick notification DM to ${targetUser.tag}.`);
                 }
             }
 
-            // Perform the kick
-            await targetMember.kick(`Kicked by ${interaction.user.tag} | ${reason}`);
+            await targetMember.kick(`[Warden Kick] By ${interaction.user.tag}: ${reason}`);
 
-            // Log to warnings database
             const warning = warningsDB.add(interaction.guild.id, targetUser.id, {
                 moderatorId: interaction.user.id,
                 moderatorTag: interaction.user.tag,
@@ -150,8 +141,7 @@ module.exports = {
                 type: 'kick',
             });
 
-            // Create success embed
-            const successEmbed = EmbedTemplates.modAction({
+            const successCard = V2Templates.modAction({
                 action: 'kick',
                 target: targetUser,
                 moderator: interaction.user,
@@ -160,39 +150,38 @@ module.exports = {
                 dmSent,
             });
 
-            // Log to mod log channel
-            await logToModChannel(interaction.guild, successEmbed);
-
-            await buttonInteraction.editReply({
-                embeds: [successEmbed],
-                components: [],
-            });
+            await logToModChannel(interaction.guild, successCard);
+            await successCard.editReply(buttonInteraction);
 
             logger.info(`${interaction.user.tag} kicked ${targetUser.tag} from ${interaction.guild.name}. Reason: ${reason}`);
 
         } catch (error) {
             if (error.code === 'InteractionCollectorError') {
-                const timeoutEmbed = EmbedTemplates.error('Timed Out', 'Kick confirmation timed out. No action was taken.');
-                return interaction.editReply({ embeds: [timeoutEmbed], components: [] });
+                return V2Templates.warning(
+                    'Operation Timed Out',
+                    'Confirmation expired after 30 seconds of inactivity. No changes were applied.'
+                ).editReply(interaction);
             }
 
-            logger.error('Error during kick command:', error);
-            const errorEmbed = EmbedTemplates.error('Kick Failed', 'An error occurred while trying to kick this user.');
-            return interaction.editReply({ embeds: [errorEmbed], components: [] });
+            logger.error('Error during kick command execution:', error);
+            return V2Templates.error(
+                'Execution Failure',
+                'An unexpected error occurred while executing the kick action.'
+            ).editReply(interaction);
         }
     },
 };
 
-async function logToModChannel(guild, embed) {
+async function logToModChannel(guild, card) {
     try {
         const logChannels = JSON.parse(fs.readFileSync(path.join(__dirname, '../../data/logChannels.json'), 'utf8'));
         if (logChannels.modLog) {
             const modLogChannel = guild.channels.cache.get(logChannels.modLog);
             if (modLogChannel) {
-                await modLogChannel.send({ embeds: [embed] });
+                await card.send(modLogChannel);
             }
         }
     } catch (error) {
-        logger.warn('Could not log to mod channel:', error);
+        logger.warn('Could not dispatch log to mod channel:', error);
     }
 }

@@ -1,247 +1,193 @@
-# 🛡️ Warden V2 - Discord Moderation Bot
+# Warden - Advanced Discord Moderation & Utility System
 
 <div align="center">
 
-![Warden Logo](https://img.shields.io/badge/Warden-V2-5865F2?style=for-the-badge&logo=discord&logoColor=white)
 ![Discord.js](https://img.shields.io/badge/Discord.js-v14-5865F2?style=flat-square&logo=discord)
 ![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=flat-square&logo=node.js)
+![Discord Components V2](https://img.shields.io/badge/Discord_Components-V2-5865F2?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
 
-**A powerful, modern Discord moderation bot with comprehensive logging, moderation commands, and utility features.**
+**A high-performance Discord administration bot rebuilt from the ground up on Discord Components V2 with zero-emoji aesthetic typography, modular layouts, and audit capabilities.**
 
-[Features](#-features) • [Installation](#-installation) • [Commands](#-commands) • [Configuration](#%EF%B8%8F-configuration) • [Contributing](#-contributing)
+[Architecture](#architecture) • [Installation](#installation) • [Commands](#commands) • [Configuration](#configuration)
 
 </div>
 
 ---
 
-## ✨ Features
+## Architecture: Discord Components V2
 
-### 🛡️ Moderation
-- **Ban/Unban** - Ban users with optional message deletion and DM notifications
-- **Kick** - Remove users from the server with logging
-- **Mute/Unmute** - Timeout users for configurable durations
-- **Warn** - Issue warnings with persistent storage and auto-escalation
-- **Softban** - Ban and immediately unban to clear messages
-- **Purge** - Bulk delete messages with powerful filters (by user, content, bots, attachments)
-- **Slowmode** - Set channel slowmode with easy duration parsing
-- **Lock/Unlock** - Lock channels during emergencies
-
-### 📋 Comprehensive Logging
-- **Mod Logs** - Track all moderation actions (bans, kicks, mutes, warns)
-- **Spam Logs** - Monitor message edits and deletions
-- **Channel Logs** - Track channel creates, updates, and deletions
-- **Member Logs** - Join/leave tracking with account age detection
-
-### 🔧 Utility Commands
-- **Help** - Interactive help menu with category navigation
-- **Userinfo** - Detailed user information with badges and permissions
-- **Serverinfo** - Comprehensive server statistics
-- **Avatar** - View user avatars with download options
-- **Roleinfo** - Detailed role information and permissions
-- **Emojiinfo** - Custom emoji details with download links
-- **Poll** - Create interactive polls with voting
-- **Remind** - Set personal reminders
-- **Snipe** - Retrieve deleted/edited messages
-
-### 🔐 Security
-- **Permission-based Commands** - All moderation commands require proper permissions
-- **Role Hierarchy** - Cannot moderate users with equal or higher roles
-- **DM Notifications** - Users are notified when moderated (configurable)
-- **Confirmation Dialogs** - Important actions require confirmation
+Warden has replaced legacy embeds and emoji-heavy message layouts with **Discord Components V2** (`flags: MessageFlags.IsComponentsV2`):
+- **Container Layouts (Type 17):** Modular cards styled with high-contrast accent color borders (`#5865F2` Blurple, `#ED4245` Crimson, `#57F287` Emerald Mint, `#FEE75C` Amber).
+- **Text Displays (Type 10):** Clean typographic headers, markdown grids, and metadata blocks without emoji clutter.
+- **Visual Separators (Type 14):** Structural divider lines and micro-spacing between sections.
+- **Integrated Action Rows (Type 1):** Native interactive buttons and select menus seamlessly nested inside component cards.
+- **Resilient Fallback Engine:** Automatic fallbacks ensure compatibility across all Discord client interfaces.
 
 ---
 
-## 📦 Installation
+## Features
+
+### Moderation Enforcement
+- **Ban / Softban / Unban:** Permanent and temporary exclusion with message history purge options and direct message audit alerts.
+- **Timeout / Mute / Unmute:** Fine-grained member timeout controls using native duration parsing (`ms`).
+- **Kick:** Immediate server removal with hierarchy permission safeguards.
+- **Warning Ledger:** Persistent file-backed warning system with Case IDs, audit search, pagination, and deletion.
+- **Lockdown Control:** Emergency channel locking (`/lock`, `/unlock`) and rate limit adjustment (`/slowmode`).
+- **Purge Engine:** Bulk deletion (1-100 messages) with multi-criteria filtering (target user, bot messages, text content).
+
+### Telemetry & Intelligence
+- **Network Status (`/ping`):** Gateway WebSocket latency, HTTP roundtrip, and real-time status metrics.
+- **User Intelligence (`/userinfo`):** Account age, guild join timestamp, role hierarchy, elevated permissions, and recognition flags.
+- **Server Specifications (`/serverinfo`):** Verification levels, channel counts, member demographics, and boost tiers.
+- **Asset Inspection (`/avatar`, `/emojiinfo`):** High-resolution media asset extraction with format download links.
+- **Role Audits (`/roleinfo`):** Role permission bits, hoist state, and member counts.
+
+### Utility & Automation
+- **Interactive Live Polls (`/poll`):** Dynamic ballots with real-time percentage indicators and anonymous voting.
+- **Scheduled Reminders (`/remind`):** Persistent asynchronous reminder scheduling with DM fallbacks.
+- **Message Snipe (`/snipe`):** In-memory audit tracking for recently deleted and edited messages.
+- **Vanity Color Roles (`/setupcolors`):** Self-service color assignment via Discord select menus.
+
+---
+
+## Installation
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) v18.0.0 or higher
-- A Discord Bot Token ([Discord Developer Portal](https://discord.com/developers/applications))
+- Node.js v18.0.0 or higher
+- A registered Discord Application with Bot Token from the [Discord Developer Portal](https://discord.com/developers/applications)
 
-### Quick Start
+### Setup Steps
 
-1. **Clone the repository**
+1. **Clone the repository:**
    ```bash
    git clone https://github.com/AyaanplayszYT/Warden-V2.git
    cd Warden-V2
    ```
 
-2. **Install dependencies**
+2. **Install dependencies:**
    ```bash
    npm install
    ```
 
-3. **Configure environment variables**
-   
-   Create a `.env` file in the root directory:
+3. **Configure environment variables:**
+   Create a `.env` file in the project root:
    ```env
    DISCORD_TOKEN=your_bot_token_here
-   CLIENT_ID=your_bot_client_id
-   GUILD_ID=your_test_server_id  # Optional: for guild-specific deployment
+   CLIENT_ID=your_application_client_id
+   GUILD_ID=your_test_server_id # Optional: For instant guild-specific slash command registration
    ```
 
-4. **Deploy slash commands**
+4. **Deploy application slash commands:**
    ```bash
    node deploy-commands.js
    ```
 
-5. **Start the bot**
+5. **Start the bot:**
    ```bash
    npm start
    ```
 
-6. **Configure in Discord**
-   - Use `/setmodlog` in your mod log channel
-   - Use `/setspamlog` in your spam log channel
-   - Use `/help` to see all available commands
+---
+
+## Commands
+
+### Moderation
+| Command | Description | Permission Requirement |
+| :--- | :--- | :--- |
+| `/ban` | Ban a user with optional message deletion and DM notice | Ban Members |
+| `/unban` | Revoke a guild ban by Discord User ID | Ban Members |
+| `/kick` | Remove a member from the guild | Kick Members |
+| `/mute` | Apply communication timeout (e.g. `10m`, `2h`, `1d`) | Moderate Members |
+| `/unmute` | Remove active communication timeout | Moderate Members |
+| `/warn` | Issue an official recorded warning | Moderate Members |
+| `/warnings` | Inspect, clear, or remove warnings by Case ID | Moderate Members |
+| `/softban` | Ban and immediately unban to clear message history | Ban Members |
+| `/purge` | Bulk delete messages with user/bot/content filters | Manage Messages |
+| `/slowmode` | Set channel message rate limit delay | Manage Channels |
+| `/lock` | Restrict member message transmission in channel | Manage Channels |
+| `/unlock` | Restore normal message permissions in channel | Manage Channels |
+
+### Intelligence & Telemetry
+| Command | Description | Access |
+| :--- | :--- | :--- |
+| `/userinfo` | Inspect profile metadata, permissions, and roles | Public |
+| `/serverinfo` | Display guild telemetry, security tier, and metrics | Public |
+| `/avatar` | View user profile image with download links | Public |
+| `/roleinfo` | Display role hierarchy and assigned permissions | Public |
+| `/emojiinfo` | Inspect custom emoji assets and metadata | Public |
+| `/ping` | Real-time WebSocket and HTTP latency metrics | Public |
+
+### Utility & Management
+| Command | Description | Access |
+| :--- | :--- | :--- |
+| `/help` | Interactive directory and command documentation | Public |
+| `/poll` | Launch interactive voting poll | Public |
+| `/remind` | Schedule personal asynchronous reminders | Public |
+| `/snipe` | Inspect deleted or edited message records | Public |
+| `/modlogs` | View recent guild moderation enforcement actions | Moderate Members |
+| `/spamlogs` | Inspect automated anti-spam and auto-mod detections | Moderate Members |
+| `/setmodlog` | Route moderation audit records to a channel | Manage Server |
+| `/setspamlog` | Route spam detections and deletions to a channel | Manage Server |
+| `/setupcolors` | Deploy vanity color role selector | Administrator |
 
 ---
 
-## 📋 Commands
+## Configuration
 
-### 🛡️ Moderation Commands
-> These commands require specific permissions and can only be used by moderators.
-
-| Command | Description | Permission |
-|---------|-------------|------------|
-| `/ban` | Ban a user from the server | Ban Members |
-| `/unban` | Unban a user by ID | Ban Members |
-| `/kick` | Kick a user from the server | Kick Members |
-| `/mute` | Timeout a user for a duration | Moderate Members |
-| `/unmute` | Remove timeout from a user | Moderate Members |
-| `/warn` | Issue a warning to a user | Moderate Members |
-| `/warnings` | View/manage user warnings | Moderate Members |
-| `/softban` | Ban + unban to delete messages | Ban Members |
-| `/purge` | Bulk delete messages | Manage Messages |
-| `/slowmode` | Set channel slowmode | Manage Channels |
-| `/lock` | Lock a channel | Manage Channels |
-| `/unlock` | Unlock a channel | Manage Channels |
-
-### ℹ️ Information Commands
-| Command | Description |
-|---------|-------------|
-| `/userinfo` | Display user information |
-| `/serverinfo` | Display server statistics |
-| `/avatar` | View a user's avatar |
-| `/roleinfo` | Display role information |
-| `/emojiinfo` | Display emoji information |
-
-### 🔧 Utility Commands
-| Command | Description |
-|---------|-------------|
-| `/help` | Show all commands |
-| `/ping` | Check bot latency |
-| `/poll` | Create an interactive poll |
-| `/remind` | Set a reminder |
-| `/snipe` | View deleted/edited messages |
-| `/modlogs` | View moderation history |
-| `/spamlogs` | View spam log history |
-
-### ⚙️ Configuration Commands
-> Administrator permissions required.
-
-| Command | Description |
-|---------|-------------|
-| `/setmodlog` | Set the mod log channel |
-| `/setspamlog` | Set the spam log channel |
-| `/setupcolors` | Configure color roles |
-
----
-
-## ⚙️ Configuration
-
-### Environment Variables
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `DISCORD_TOKEN` | Your bot's token | ✅ |
-| `CLIENT_ID` | Your bot's application ID | ✅ |
-| `GUILD_ID` | Test server ID (for instant deployment) | ❌ |
-
-### Config Files
-
-**`config/config.json`**
+### Settings (`config/config.json`)
 ```json
 {
-    "prefix": "!",
-    "ownerId": "your_user_id",
-    "maxWarnings": 5,
-    "autoModEnabled": true
+  "prefix": "!",
+  "ownerId": "your_user_id",
+  "defaultCooldown": 3,
+  "maxWarnings": 5,
+  "autoModEnabled": true,
+  "antiSpamEnabled": true,
+  "antiSpamThreshold": 5,
+  "antiSpamInterval": 5000,
+  "embedFooter": "Warden | Security & Utility",
+  "version": "4.0.0"
 }
 ```
 
-**`config/colors.json`** - Customize embed colors
-**`config/emojis.json`** - Customize bot emojis
+### Color Palette (`config/colors.json`)
+Allows custom accent color mapping for Discord Components V2 containers and embeds.
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 Warden-V2/
 ├── commands/
-│   ├── moderation/     # Moderation commands (ban, kick, mute, etc.)
-│   └── utility/        # Utility commands (help, ping, userinfo, etc.)
+│   ├── moderation/      # Moderation commands (ban, kick, mute, lock, etc.)
+│   └── utility/         # Utility commands (help, ping, userinfo, poll, etc.)
 ├── config/
-│   ├── colors.json     # Color configurations
-│   ├── config.json     # Bot settings
-│   └── emojis.json     # Emoji configurations
+│   ├── colors.json      # Theme palette and accent colors
+│   ├── config.json      # General system configuration
+│   └── emojis.json      # Empty placeholder mapping (emoji-free design)
 ├── data/
-│   ├── logChannels.json    # Saved log channel IDs
-│   ├── warnings.json       # User warnings database
-│   └── reminders.json      # User reminders
-├── events/             # Discord event handlers
-├── structures/         # Base classes
+│   ├── colorRoles.json  # Vanity color role mapping
+│   ├── logChannels.json # Channel routing for mod and spam logs
+│   ├── purgeLogs.txt    # Audit log file for bulk deletions
+│   └── reminders.json   # Persistent reminders storage
+├── events/              # Gateway event listeners
+├── structures/          # Base command and event definitions
 ├── utils/
-│   ├── embedBuilder.js     # Embed utilities
-│   ├── logger.js           # Console logger
-│   ├── modLogs.js          # Mod logging utility
-│   ├── spamLogs.js         # Spam logging utility
-│   └── warningsDB.js       # Warnings database
-├── deploy-commands.js  # Command deployment script
-├── index.js            # Bot entry point
+│   ├── v2Components.js  # Discord Components V2 Engine (V2Card, V2Templates)
+│   ├── embedBuilder.js  # Unified builder facade & fallback adapter
+│   ├── logger.js        # Formatted console logger
+│   ├── modLogs.js       # In-memory moderation log store
+│   ├── spamLogs.js      # In-memory spam log store
+│   └── warningsDB.js    # Persistent warnings database
+├── deploy-commands.js   # Slash command deployment tool
+├── index.js             # Main process entry point
 └── package.json
 ```
 
 ---
 
-## 🐛 Known Issues & Fixes
+## License
 
-- **Warnings bugs** - Fixed with new JSON database system
-- **Bot message logging** - Configure ignored bot IDs in `events/messageDelete.js`
-- **Image logging** - Deleted messages with attachments are now logged with image URLs
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
----
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 💬 Support
-
-If you encounter any issues or have suggestions, please:
-- Open an [Issue](https://github.com/AyaanplayszYT/Warden-V2/issues)
-- Contact on Discord: **AyaanplayszYT**
-
----
-
-<div align="center">
-
-**Made with ❤️ by [AyaanplayszYT](https://github.com/AyaanplayszYT)**
-
-⭐ Star this repo if you find it useful!
-
-</div>
+This project is licensed under the MIT License.

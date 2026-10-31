@@ -1,39 +1,38 @@
 const { PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
-const { WardenEmbed, EmbedTemplates, emojis, colors } = require('../../utils/embedBuilder');
+const { V2Card, V2Templates } = require('../../utils/v2Components');
 const warningsDB = require('../../utils/warningsDB');
 const logger = require('../../utils/logger');
 
-function getTypeEmoji(type) {
-    const typeEmojis = {
-        ban: '🔨',
-        kick: '👢',
-        mute: '🔇',
-        warn: '⚠️',
-        unban: '🔓',
-        unmute: '🔊',
-        softban: '🔨',
-        timeout: '⏰',
+function getTypeBadge(type) {
+    const badges = {
+        ban: '[BAN]',
+        kick: '[KICK]',
+        mute: '[TIMEOUT]',
+        warn: '[WARN]',
+        unban: '[UNBAN]',
+        unmute: '[UNMUTE]',
+        softban: '[SOFTBAN]',
     };
-    return typeEmojis[type?.toLowerCase()] || '📋';
+    return badges[type?.toLowerCase()] || `[${type?.toUpperCase() || 'ACTION'}]`;
 }
 
 module.exports = {
     data: {
         name: 'modlogs',
-        description: 'View recent moderation actions and statistics.',
+        description: 'View recent moderation actions and server audit statistics.',
         options: [
             {
                 name: 'limit',
-                description: 'Number of recent actions to show (default: 10)',
-                type: 4,
+                description: 'Number of actions to inspect (default: 10)',
+                type: 4, // INTEGER
                 required: false,
                 min_value: 1,
                 max_value: 50,
             },
             {
                 name: 'user',
-                description: 'Filter logs by a specific user',
-                type: 6,
+                description: 'Filter logs by a specific user account',
+                type: 6, // USER
                 required: false,
             },
         ],
@@ -44,165 +43,52 @@ module.exports = {
         await interaction.deferReply();
 
         if (!interaction.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
-            return interaction.editReply({
-                embeds: [EmbedTemplates.error('Permission Denied', 'You need the Moderate Members permission.')],
-            });
+            return V2Templates.error(
+                'Permission Denied',
+                'You lack the required `Moderate Members` permission to inspect moderation logs.'
+            ).editReply(interaction);
         }
 
         const limit = interaction.options.getInteger('limit') || 10;
-        const targetUser = interaction.options.getUser('user');
+        const filterUser = interaction.options.getUser('user');
 
-        let allActions = [];
-        
-        try {
-            if (targetUser) {
-                allActions = warningsDB.get(interaction.guild.id, targetUser.id);
-            } else {
-                const guildWarnings = warningsDB.warnings[interaction.guild.id] || {};
-                for (const oderId in guildWarnings) {
-                    allActions.push(...guildWarnings[oderId].map(w => ({ ...w, oderId })));
-                }
-                allActions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-            }
-        } catch (error) {
-            logger.error('Error fetching mod logs:', error);
+        const allWarnings = warningsDB.getAllForGuild(interaction.guild.id);
+
+        let filtered = allWarnings;
+        if (filterUser) {
+            filtered = filtered.filter(w => w.userId === filterUser.id);
         }
 
-        if (allActions.length === 0) {
-            const noLogsEmbed = new WardenEmbed()
-                .setType('info')
-                .setTitle('Moderation Logs')
-                .setDescription(
-                    targetUser 
-                        ? `No moderation actions recorded for **${targetUser.tag}**.`
-                        : 'No moderation actions recorded yet.'
-                )
-                .build();
-            
-            return interaction.editReply({ embeds: [noLogsEmbed] });
+        if (filtered.length === 0) {
+            return V2Templates.info(
+                'No Audit Logs Found',
+                filterUser
+                    ? `No moderation actions recorded for **${filterUser.tag}** (\`${filterUser.id}\`).`
+                    : 'No moderation records found in this server\'s audit database.'
+            ).editReply(interaction);
         }
 
-        const pages = [];
-        const actionsPerPage = 5;
-        const limitedActions = allActions.slice(0, limit);
-
-        for (let i = 0; i < limitedActions.length; i += actionsPerPage) {
-            const pageActions = limitedActions.slice(i, i + actionsPerPage);
-            
-            const embed = new WardenEmbed()
-                .setType('primary')
-                .setTitle('Moderation Logs')
-                .setDescription(
-                    targetUser 
-                        ? `Showing actions for **${targetUser.tag}**`
-                        : `Showing ${limitedActions.length} recent moderation actions`
-                );
-
-            pageActions.forEach(action => {
-                const timestamp = action.timestamp ? Math.floor(new Date(action.timestamp).getTime() / 1000) : 0;
-                const typeEmoji = getTypeEmoji(action.type);
-                
-                embed.addField(
-                    `${typeEmoji} Case #${action.caseId || '?'} - ${(action.type || 'unknown').toUpperCase()}`,
-                    [
-                        `**User:** <@${action.userId || action.oderId || 'Unknown'}>`,
-                        `**Moderator:** ${action.moderatorTag || 'Unknown'}`,
-                        `**Reason:** ${action.reason || 'No reason provided'}`,
-                        timestamp ? `**When:** <t:${timestamp}:R>` : ''
-                    ].filter(Boolean).join('\n'),
-                    false
-                );
-            });
-
-            embed.setFooter(`Page ${pages.length + 1} - ${allActions.length} total actions`);
-            pages.push(embed.build());
-        }
-
-        if (pages.length === 1) {
-            return interaction.editReply({ embeds: [pages[0]] });
-        }
-
-        let currentPage = 0;
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('modlogs_prev')
-                .setLabel('Previous')
-                .setStyle(ButtonStyle.Secondary)
-                .setDisabled(true),
-            new ButtonBuilder()
-                .setCustomId('modlogs_page')
-                .setLabel(`Page 1/${pages.length}`)
-                .setStyle(ButtonStyle.Primary)
-                .setDisabled(true),
-            new ButtonBuilder()
-                .setCustomId('modlogs_next')
-                .setLabel('Next')
-                .setStyle(ButtonStyle.Secondary)
-                .setDisabled(pages.length <= 1)
-        );
-
-        const message = await interaction.editReply({
-            embeds: [pages[0]],
-            components: [row],
-        });
-
-        const collector = message.createMessageComponentCollector({
-            componentType: ComponentType.Button,
-            filter: i => i.user.id === interaction.user.id,
-            time: 120000,
-        });
-
-        collector.on('collect', async i => {
-            if (i.customId === 'modlogs_prev') {
-                currentPage = Math.max(0, currentPage - 1);
-            } else if (i.customId === 'modlogs_next') {
-                currentPage = Math.min(pages.length - 1, currentPage + 1);
-            }
-
-            const newRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('modlogs_prev')
-                    .setLabel('Previous')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(currentPage === 0),
-                new ButtonBuilder()
-                    .setCustomId('modlogs_page')
-                    .setLabel(`Page ${currentPage + 1}/${pages.length}`)
-                    .setStyle(ButtonStyle.Primary)
-                    .setDisabled(true),
-                new ButtonBuilder()
-                    .setCustomId('modlogs_next')
-                    .setLabel('Next')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(currentPage === pages.length - 1)
+        const logsToShow = filtered.slice(0, limit);
+        const card = new V2Card()
+            .setAccent('primary')
+            .setTitle(
+                filterUser ? `[MODERATION LOGS] ${filterUser.tag}` : '[SERVER AUDIT LOGS] Recent Actions',
+                `Displaying ${logsToShow.length} of ${filtered.length} total logged incident(s).`
             );
 
-            await i.update({ embeds: [pages[currentPage]], components: [newRow] });
-        });
-
-        collector.on('end', async () => {
-            const disabledRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('modlogs_prev')
-                    .setLabel('Previous')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(true),
-                new ButtonBuilder()
-                    .setCustomId('modlogs_page')
-                    .setLabel(`Page ${currentPage + 1}/${pages.length}`)
-                    .setStyle(ButtonStyle.Primary)
-                    .setDisabled(true),
-                new ButtonBuilder()
-                    .setCustomId('modlogs_next')
-                    .setLabel('Next')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(true)
+        logsToShow.forEach(log => {
+            const badge = getTypeBadge(log.type);
+            const ts = Math.floor(new Date(log.timestamp).getTime() / 1000);
+            card.addField(
+                `Case #${log.caseId} ${badge}`,
+                `**Target:** <@${log.userId}>\n**Moderator:** ${log.moderatorTag}\n**Reason:** ${log.reason}\n**Date:** <t:${ts}:R>`,
+                false
             );
-
-            await message.edit({ components: [disabledRow] }).catch(() => {});
         });
 
-        logger.info(`Modlogs command used by ${interaction.user.tag}`);
+        card.setFooter(`Guild Audit Registry • Requested by ${interaction.user.tag}`);
+        await card.editReply(interaction);
+
+        logger.info(`Modlogs viewed by ${interaction.user.tag} (count: ${logsToShow.length})`);
     },
 };

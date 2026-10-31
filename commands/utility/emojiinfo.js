@@ -1,172 +1,68 @@
-const { SlashCommandBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js');
-const { WardenEmbed, EmbedTemplates, colors, emojis } = require('../../utils/embedBuilder');
+const { parseEmoji, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { V2Card, V2Templates } = require('../../utils/v2Components');
+const logger = require('../../utils/logger');
 
 module.exports = {
-    name: 'emojiinfo',
-    description: 'Display information about a custom emoji',
-    usage: 'emojiinfo <emoji>',
-    category: 'utility',
-    data: new SlashCommandBuilder()
-        .setName('emojiinfo')
-        .setDescription('Display information about a custom emoji')
-        .addStringOption(option =>
-            option.setName('emoji')
-                .setDescription('The custom emoji to get information about')
-                .setRequired(true)
-        ),
-
-    async execute(interaction, client) {
-        const emojiInput = interaction.options?.getString('emoji') || interaction.args?.[0];
-        
-        if (!emojiInput) {
-            return interaction.reply({
-                embeds: [EmbedTemplates.error('No Emoji', 'Please provide a custom emoji.')],
-                ephemeral: true
-            });
-        }
-
-        // Parse emoji from input
-        const emojiRegex = /<?(a)?:?(\w{2,32}):(\d{17,19})>?/;
-        const match = emojiInput.match(emojiRegex);
-        
-        if (!match) {
-            // Try to find emoji by name in the guild
-            const emojiByName = interaction.guild.emojis.cache.find(
-                e => e.name.toLowerCase() === emojiInput.toLowerCase()
-            );
-            
-            if (!emojiByName) {
-                return interaction.reply({
-                    embeds: [EmbedTemplates.error(
-                        'Invalid emoji! Please provide a valid custom emoji.\n\n' +
-                        '**Examples:**\n' +
-                        '• `:emoji_name:` (from this server)\n' +
-                        '• `<:emoji_name:123456789>`\n' +
-                        '• `<a:animated_emoji:123456789>`'
-                    )],
-                    ephemeral: true
-                });
-            }
-            
-            return sendEmojiInfo(interaction, emojiByName);
-        }
-
-        const [, animated, name, id] = match;
-        
-        // Try to get emoji from cache first
-        let emoji = client.emojis.cache.get(id);
-        
-        // If not in cache, create a partial emoji object
-        if (!emoji) {
-            const isAnimated = !!animated;
-            const extension = isAnimated ? 'gif' : 'png';
-            const emojiUrl = `https://cdn.discordapp.com/emojis/${id}.${extension}?size=4096`;
-            
-            // Create a pseudo-emoji object for external emojis
-            emoji = {
-                id,
-                name,
-                animated: isAnimated,
-                url: emojiUrl,
-                identifier: `${isAnimated ? 'a:' : ''}${name}:${id}`,
-                toString: () => `<${isAnimated ? 'a' : ''}:${name}:${id}>`,
-                createdTimestamp: (BigInt(id) >> 22n) + 1420070400000n,
-                external: true
-            };
-        }
-
-        return sendEmojiInfo(interaction, emoji);
-    }
-};
-
-async function sendEmojiInfo(interaction, emoji) {
-    const isAnimated = emoji.animated;
-    const extension = isAnimated ? 'gif' : 'png';
-    
-    const emojiUrl = emoji.url || `https://cdn.discordapp.com/emojis/${emoji.id}.${extension}?size=4096`;
-    const createdTimestamp = emoji.createdTimestamp 
-        ? Math.floor(Number(emoji.createdTimestamp) / 1000)
-        : Math.floor((Number(BigInt(emoji.id) >> 22n) + 1420070400000) / 1000);
-
-    const embed = new WardenEmbed()
-        .setColor(colors.primary)
-        .setAuthor({ 
-            name: 'Emoji Information',
-            iconURL: interaction.guild.iconURL({ dynamic: true })
-        })
-        .setTitle(`:${emoji.name}:`)
-        .setThumbnail(emojiUrl)
-        .addFields(
+    data: {
+        name: 'emojiinfo',
+        description: 'Inspect technical metadata, dimensions, and source for a custom emoji.',
+        options: [
             {
-                name: '📋 General',
-                value: [
-                    `${emojis.id} **ID:** \`${emoji.id}\``,
-                    `📝 **Name:** \`${emoji.name}\``,
-                    `🎞️ **Animated:** ${isAnimated ? emojis.success : emojis.error}`,
-                    `📅 **Created:** <t:${createdTimestamp}:R>`
-                ].join('\n'),
-                inline: true
-            }
-        );
+                name: 'emoji',
+                description: 'The custom emoji to inspect',
+                type: 3, // STRING
+                required: true,
+            },
+        ],
+    },
 
-    // Add guild info if emoji is from a guild
-    if (emoji.guild) {
-        embed.addFields({
-            name: '🏠 Server',
-            value: [
-                `**Name:** ${emoji.guild.name}`,
-                `**ID:** \`${emoji.guild.id}\``
-            ].join('\n'),
-            inline: true
-        });
+    async execute(interaction) {
+        await interaction.deferReply();
 
-        // Add usage info
-        if (emoji.roles?.cache?.size > 0) {
-            embed.addFields({
-                name: '🔒 Restricted To',
-                value: emoji.roles.cache.map(r => r.toString()).join(', '),
-                inline: false
-            });
+        const emojiInput = interaction.options.getString('emoji').trim();
+        const parsed = parseEmoji(emojiInput);
+
+        if (!parsed || !parsed.id) {
+            return V2Templates.error(
+                'Invalid Emoji',
+                'Please supply a custom Discord emoji (e.g. `<:name:1234567890>`). Standard Unicode emojis do not have guild asset metadata.'
+            ).editReply(interaction);
         }
-    } else if (emoji.external) {
-        embed.addFields({
-            name: '🌐 External Emoji',
-            value: 'This emoji is from another server',
-            inline: true
-        });
-    }
 
-    // Add usage
-    embed.addFields({
-        name: '💬 Usage',
-        value: `\`<${isAnimated ? 'a' : ''}:${emoji.name}:${emoji.id}>\``,
-        inline: false
-    });
+        const extension = parsed.animated ? 'gif' : 'png';
+        const emojiURL = `https://cdn.discordapp.com/emojis/${parsed.id}.${extension}?size=4096`;
 
-    // Create download buttons
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setLabel(`Download ${extension.toUpperCase()}`)
-            .setStyle(ButtonStyle.Link)
-            .setURL(emojiUrl)
-            .setEmoji('📥')
-    );
+        // Check if emoji belongs to current guild
+        const guildEmoji = interaction.guild.emojis.cache.get(parsed.id);
 
-    // Add PNG option for animated emojis
-    if (isAnimated) {
-        row.addComponents(
+        const card = new V2Card()
+            .setAccent('primary')
+            .setTitle(`[EMOJI METADATA] :${parsed.name}:`, `Identifier: \`${parsed.id}\``)
+            .addField('Raw Format Code', `\`<${parsed.animated ? 'a' : ''}:${parsed.name}:${parsed.id}>\``, false)
+            .addField('Animation State', parsed.animated ? 'Animated GIF' : 'Static PNG', true)
+            .addField('Origin Guild', guildEmoji ? 'Local (This Server)' : 'External Server', true);
+
+        if (guildEmoji) {
+            const author = await guildEmoji.fetchAuthor().catch(() => null);
+            if (author) {
+                card.addField('Uploaded By', `${author.tag} (\`${author.id}\`)`, true);
+            }
+            card.addField('Created Date', `<t:${Math.floor(guildEmoji.createdTimestamp / 1000)}:F>`, true);
+            card.addField('Requires Colons', guildEmoji.requiresColons ? 'Yes' : 'No', true);
+            card.addField('Managed by Integration', guildEmoji.managed ? 'Yes' : 'No', true);
+        }
+
+        const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setLabel('Download PNG (Still)')
+                .setLabel('View Full Resolution Image')
                 .setStyle(ButtonStyle.Link)
-                .setURL(`https://cdn.discordapp.com/emojis/${emoji.id}.png?size=4096`)
-                .setEmoji('🖼️')
+                .setURL(emojiURL)
         );
-    }
 
-    embed.setFooter({ 
-        text: `Requested by ${interaction.user.tag}`,
-        iconURL: interaction.user.displayAvatarURL({ dynamic: true })
-    }).setTimestamp();
+        card.addActionRow(row);
+        card.setFooter(`Requested by ${interaction.user.tag}`);
 
-    return interaction.reply({ embeds: [embed], components: [row] });
-}
+        await card.editReply(interaction);
+        logger.info(`Emojiinfo fetched for ${parsed.name} (${parsed.id}) by ${interaction.user.tag}`);
+    },
+};

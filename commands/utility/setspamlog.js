@@ -1,5 +1,5 @@
 const { PermissionFlagsBits, ChannelType } = require('discord.js');
-const { WardenEmbed, EmbedTemplates, emojis } = require('../../utils/embedBuilder');
+const { V2Card, V2Templates } = require('../../utils/v2Components');
 const logger = require('../../utils/logger');
 const fs = require('fs');
 const path = require('path');
@@ -7,19 +7,19 @@ const path = require('path');
 module.exports = {
     data: {
         name: 'setspamlog',
-        description: 'Set or remove the spam/message log channel.',
+        description: 'Configure or disable the automated spam and deletion logging channel.',
         options: [
             {
                 name: 'channel',
-                description: 'The channel to use for spam logs (leave empty to use current channel)',
-                type: 7,
+                description: 'The target channel for spam detection records (defaults to current)',
+                type: 7, // CHANNEL
                 required: false,
                 channel_types: [ChannelType.GuildText, ChannelType.GuildAnnouncement],
             },
             {
                 name: 'disable',
-                description: 'Disable the spam log channel',
-                type: 5,
+                description: 'Disable spam log routing',
+                type: 5, // BOOLEAN
                 required: false,
             },
         ],
@@ -28,10 +28,10 @@ module.exports = {
 
     async execute(interaction) {
         if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
-            return interaction.reply({
-                embeds: [EmbedTemplates.error('Permission Denied', 'You need the Manage Server permission.')],
-                ephemeral: true,
-            });
+            return V2Templates.error(
+                'Permission Denied',
+                'You lack the required `Manage Server` permission to configure audit log channels.'
+            ).reply(interaction, { ephemeral: true });
         }
 
         const channel = interaction.options.getChannel('channel') || interaction.channel;
@@ -46,23 +46,29 @@ module.exports = {
         if (disable) {
             logChannels.spamLog = '';
             fs.writeFileSync(filePath, JSON.stringify(logChannels, null, 2));
-            return interaction.reply({
-                embeds: [EmbedTemplates.success('Spam Log Disabled', 'Message/spam logging has been disabled.')],
-            });
+
+            const card = new V2Card()
+                .setAccent('warning')
+                .setTitle('[LOG CONFIGURATION] Spam Logs Disabled')
+                .setDescription('Automatic spam, edit, and deletion logging has been deactivated.')
+                .addField('Configured By', `${interaction.user.tag} (\`${interaction.user.id}\`)`, true)
+                .setTimestamp(new Date());
+
+            return card.reply(interaction);
         }
 
         logChannels.spamLog = channel.id;
         fs.writeFileSync(filePath, JSON.stringify(logChannels, null, 2));
 
-        const embed = new WardenEmbed()
-            .setType('success')
-            .setTitle(`${emojis.success} Spam Log Channel Set`)
-            .setDescription(`Message edits, deletions, and spam detections will now be logged to ${channel}.`)
-            .addField('Channel', `${channel}`, true)
-            .addField('Set By', interaction.user.tag, true)
-            .build();
+        const card = new V2Card()
+            .setAccent('success')
+            .setTitle('[LOG CONFIGURATION] Spam Log Channel Assigned')
+            .setDescription(`Automated spam detections and message deletion audits will now be routed to <#${channel.id}>.`)
+            .addField('Assigned Channel', `<#${channel.id}> (\`${channel.id}\`)`, true)
+            .addField('Configured By', `${interaction.user.tag} (\`${interaction.user.id}\`)`, true)
+            .setTimestamp(new Date());
 
-        await interaction.reply({ embeds: [embed] });
-        logger.info(`Spam log channel set to ${channel.name} by ${interaction.user.tag}`);
+        await card.reply(interaction);
+        logger.info(`${interaction.user.tag} assigned spam log channel to #${channel.name}`);
     },
 };
