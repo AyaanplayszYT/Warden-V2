@@ -1,47 +1,34 @@
-const { PermissionFlagsBits, ChannelType } = require('discord.js');
-const { V2Card, V2Templates } = require('../../utils/v2Components');
+const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
+const { UI } = require('../../utils/embedBuilder');
 const logger = require('../../utils/logger');
 const ms = require('ms');
 
 module.exports = {
-    data: {
-        name: 'slowmode',
-        description: 'Configure message rate limiting (slowmode) for a channel.',
-        options: [
-            {
-                name: 'seconds',
-                description: 'Slowmode delay (e.g. 0 to disable, 5, 10, 30, 60, or 5m, 1h)',
-                type: 3, // STRING
-                required: true,
-            },
-            {
-                name: 'channel',
-                description: 'The target channel (defaults to current)',
-                type: 7, // CHANNEL
-                required: false,
-                channel_types: [ChannelType.GuildText, ChannelType.GuildAnnouncement],
-            },
-            {
-                name: 'reason',
-                description: 'Reason for adjusting slowmode',
-                type: 3, // STRING
-                required: false,
-            },
-        ],
-        default_member_permissions: PermissionFlagsBits.ManageChannels,
-    },
+    data: new SlashCommandBuilder()
+        .setName('slowmode')
+        .setDescription('Set message rate limiting for a channel')
+        .addStringOption(opt =>
+            opt.setName('seconds')
+                .setDescription('Delay (e.g. 0 to disable, 5s, 10s, 1m, 1h)')
+                .setRequired(true)
+        )
+        .addChannelOption(opt =>
+            opt.setName('channel')
+                .setDescription('The channel to configure (defaults to current)')
+                .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+                .setRequired(false)
+        )
+        .addStringOption(opt =>
+            opt.setName('reason')
+                .setDescription('Reason for the slowmode change')
+                .setRequired(false)
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
 
     async execute(interaction) {
         const input = interaction.options.getString('seconds').trim();
         const channel = interaction.options.getChannel('channel') || interaction.channel;
         const reason = interaction.options.getString('reason') || 'No reason provided';
-
-        if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-            return V2Templates.error(
-                'Permission Denied',
-                'You lack the required `Manage Channels` permission to execute this command.'
-            ).reply(interaction, { ephemeral: true });
-        }
 
         let seconds;
         if (/^\d+$/.test(input)) {
@@ -54,38 +41,22 @@ module.exports = {
         }
 
         if (seconds === undefined || isNaN(seconds) || seconds < 0 || seconds > 21600) {
-            return V2Templates.error(
-                'Invalid Rate Limit',
-                'Slowmode delay must be between `0` (disabled) and `21600` seconds (6 hours). Example values: `0`, `5s`, `10m`, `1h`.'
-            ).reply(interaction, { ephemeral: true });
+            return interaction.reply({
+                embeds: [UI.error('Invalid Rate Limit', 'Slowmode delay must be between `0` (disabled) and `21600` seconds (6 hours). Example: `0`, `5s`, `10m`.')],
+                ephemeral: true,
+            });
         }
 
-        try {
-            await channel.setRateLimitPerUser(seconds, `[Warden Slowmode] By ${interaction.user.tag}: ${reason}`);
+        await channel.setRateLimitPerUser(seconds, `${interaction.user.tag}: ${reason}`);
 
-            const card = new V2Card()
-                .setAccent(seconds === 0 ? 'success' : 'primary')
-                .setTitle(seconds === 0 ? '[SLOWMODE DISABLED] Normal Flow' : '[SLOWMODE UPDATED] Rate Limit Active')
-                .setDescription(
-                    seconds === 0
-                        ? `Slowmode has been removed from <#${channel.id}>. Members may send messages without delay.`
-                        : `Slowmode for <#${channel.id}> has been set to **${seconds} second(s)** (${ms(seconds * 1000, { long: true })}).`
-                )
-                .addField('Enforcing Moderator', `${interaction.user.tag} (\`${interaction.user.id}\`)`, true)
-                .addField('Channel', `<#${channel.id}>`, true)
-                .addField('Reason', reason, false)
-                .setTimestamp(new Date());
+        const embed = UI.success(
+            seconds === 0 ? 'Slowmode Disabled' : 'Slowmode Set',
+            seconds === 0
+                ? `Slowmode removed in ${channel}. Members can send messages without delay.`
+                : `Slowmode in ${channel} set to **${seconds}s** (${ms(seconds * 1000, { long: true })}).\n**Moderator** • ${interaction.user.tag}`
+        );
 
-            await card.reply(interaction);
-
-            logger.info(`${interaction.user.tag} set slowmode to ${seconds}s in #${channel.name}`);
-
-        } catch (error) {
-            logger.error('Error during slowmode command execution:', error);
-            return V2Templates.error(
-                'Execution Failure',
-                'Failed to update channel rate limit settings.'
-            ).reply(interaction, { ephemeral: true });
-        }
+        await interaction.reply({ embeds: [embed] });
+        logger.info(`${interaction.user.tag} set slowmode to ${seconds}s in #${channel.name}`);
     },
 };

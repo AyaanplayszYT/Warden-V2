@@ -1,92 +1,69 @@
-const { PermissionFlagsBits } = require('discord.js');
-const { V2Templates } = require('../../utils/v2Components');
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { UI } = require('../../utils/embedBuilder');
 const logger = require('../../utils/logger');
 const fs = require('fs');
 const path = require('path');
 
 module.exports = {
-    data: {
-        name: 'unmute',
-        description: 'Remove timeout communication restrictions from a user.',
-        options: [
-            {
-                name: 'user',
-                description: 'The user to unmute',
-                type: 6, // USER
-                required: true,
-            },
-            {
-                name: 'reason',
-                description: 'Reason for removing timeout',
-                type: 3, // STRING
-                required: false,
-            },
-        ],
-        default_member_permissions: PermissionFlagsBits.ModerateMembers,
-    },
+    data: new SlashCommandBuilder()
+        .setName('unmute')
+        .setDescription('Remove timeout from a member')
+        .addUserOption(opt =>
+            opt.setName('user')
+                .setDescription('The user to unmute')
+                .setRequired(true)
+        )
+        .addStringOption(opt =>
+            opt.setName('reason')
+                .setDescription('Reason for removing the timeout')
+                .setRequired(false)
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
 
     async execute(interaction) {
         const targetUser = interaction.options.getUser('user');
         const reason = interaction.options.getString('reason') || 'No reason provided';
 
-        const targetMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
+        const member = interaction.guild.members.cache.get(targetUser.id) || await interaction.guild.members.fetch(targetUser.id).catch(() => null);
 
-        if (!interaction.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
-            return V2Templates.error(
-                'Permission Denied',
-                'You lack the required `Moderate Members` permission to execute this command.'
-            ).reply(interaction, { ephemeral: true });
-        }
-
-        if (!targetMember) {
-            return V2Templates.error(
-                'Member Not Found',
-                `Target **${targetUser.tag}** (\`${targetUser.id}\`) is not currently present in this server.`
-            ).reply(interaction, { ephemeral: true });
-        }
-
-        if (!targetMember.communicationDisabledUntilTimestamp || targetMember.communicationDisabledUntilTimestamp <= Date.now()) {
-            return V2Templates.warning(
-                'Not Timed Out',
-                `Target **${targetUser.tag}** has no active timeout restrictions.`
-            ).reply(interaction, { ephemeral: true });
-        }
-
-        try {
-            await targetMember.timeout(null, `[Warden Unmute] By ${interaction.user.tag}: ${reason}`);
-
-            const card = V2Templates.modAction({
-                action: 'unmute',
-                target: targetUser,
-                moderator: interaction.user,
-                reason,
+        if (!member) {
+            return interaction.reply({
+                embeds: [UI.error('Member Not Found', 'That user is not present in this server.')],
+                ephemeral: true,
             });
-
-            await logToModChannel(interaction.guild, card);
-            await card.reply(interaction);
-
-            logger.info(`${interaction.user.tag} unmuted ${targetUser.tag}. Reason: ${reason}`);
-
-        } catch (error) {
-            logger.error('Error during unmute command execution:', error);
-            return V2Templates.error(
-                'Execution Failure',
-                'An unexpected error occurred while attempting to remove timeout.'
-            ).reply(interaction, { ephemeral: true });
         }
+
+        if (!member.communicationDisabledUntilTimestamp || member.communicationDisabledUntilTimestamp <= Date.now()) {
+            return interaction.reply({
+                embeds: [UI.warning('Not Timed Out', `${targetUser.tag} has no active timeout restrictions.`)],
+                ephemeral: true,
+            });
+        }
+
+        await member.timeout(null, `${interaction.user.tag}: ${reason}`);
+
+        const embed = UI.mod({
+            action: 'unmute',
+            target: targetUser,
+            moderator: interaction.user,
+            reason,
+        });
+
+        await interaction.reply({ embeds: [embed] });
+        await logToMod(interaction.guild, embed);
+
+        logger.info(`${interaction.user.tag} unmuted ${targetUser.tag}. Reason: ${reason}`);
     },
 };
 
-async function logToModChannel(guild, card) {
+async function logToMod(guild, embed) {
     try {
-        const logChannels = JSON.parse(fs.readFileSync(path.join(__dirname, '../../data/logChannels.json'), 'utf8'));
-        if (logChannels.modLog) {
-            const modLogChannel = guild.channels.cache.get(logChannels.modLog);
-            if (modLogChannel) {
-                await card.send(modLogChannel);
-            }
+        const filePath = path.join(__dirname, '../../data/logChannels.json');
+        if (!fs.existsSync(filePath)) return;
+        const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        if (data.modLog) {
+            const ch = guild.channels.cache.get(data.modLog);
+            if (ch) await ch.send({ embeds: [embed] });
         }
-    } catch (error) {
-        logger.warn('Could not dispatch log to mod channel:', error);
-    }
+    } catch (e) {}
 }

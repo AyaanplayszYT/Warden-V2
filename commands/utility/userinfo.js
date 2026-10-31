@@ -1,72 +1,24 @@
-const { UserFlags } = require('discord.js');
-const { V2Card } = require('../../utils/v2Components');
+const { SlashCommandBuilder } = require('discord.js');
+const { PremiumEmbed } = require('../../utils/embedBuilder');
 const warningsDB = require('../../utils/warningsDB');
 const logger = require('../../utils/logger');
 
-const BADGES = {
-    [UserFlags.Staff]: '[DISCORD STAFF]',
-    [UserFlags.Partner]: '[DISCORD PARTNER]',
-    [UserFlags.Hypesquad]: '[HYPESQUAD EVENTS]',
-    [UserFlags.BugHunterLevel1]: '[BUG HUNTER TIER 1]',
-    [UserFlags.BugHunterLevel2]: '[BUG HUNTER TIER 2]',
-    [UserFlags.HypeSquadOnlineHouse1]: '[HYPESQUAD BRAVERY]',
-    [UserFlags.HypeSquadOnlineHouse2]: '[HYPESQUAD BRILLIANCE]',
-    [UserFlags.HypeSquadOnlineHouse3]: '[HYPESQUAD BALANCE]',
-    [UserFlags.PremiumEarlySupporter]: '[EARLY SUPPORTER]',
-    [UserFlags.VerifiedDeveloper]: '[VERIFIED DEVELOPER]',
-    [UserFlags.CertifiedModerator]: '[CERTIFIED MODERATOR]',
-    [UserFlags.ActiveDeveloper]: '[ACTIVE DEVELOPER]',
-};
-
 module.exports = {
-    data: {
-        name: 'userinfo',
-        description: 'Inspect comprehensive profile, role hierarchy, and account metadata.',
-        options: [
-            {
-                name: 'user',
-                description: 'The user account to inspect (defaults to self)',
-                type: 6, // USER
-                required: false,
-            },
-        ],
-    },
+    data: new SlashCommandBuilder()
+        .setName('userinfo')
+        .setDescription('Inspect profile and role information for a user')
+        .addUserOption(opt =>
+            opt.setName('user')
+                .setDescription('The user to inspect (defaults to self)')
+                .setRequired(false)
+        ),
 
     async execute(interaction) {
         const targetUser = interaction.options.getUser('user') || interaction.user;
         const member = interaction.guild.members.cache.get(targetUser.id) || await interaction.guild.members.fetch(targetUser.id).catch(() => null);
 
-        const flags = targetUser.flags?.toArray() || [];
-        const badges = flags.map(flag => BADGES[UserFlags[flag]] || null).filter(Boolean);
-
-        if (targetUser.avatar?.startsWith('a_') || targetUser.banner) {
-            badges.push('[NITRO SUBSCRIBER]');
-        }
-
-        const presence = member?.presence;
-        const statusMap = {
-            online: 'ONLINE',
-            idle: 'IDLE',
-            dnd: 'DO NOT DISTURB',
-            offline: 'OFFLINE',
-        };
-        const statusText = statusMap[presence?.status || 'offline'] || 'OFFLINE';
-
-        const keyPermissions = [
-            'Administrator',
-            'ManageGuild',
-            'ManageRoles',
-            'ManageChannels',
-            'KickMembers',
-            'BanMembers',
-            'ManageMessages',
-            'MentionEveryone',
-        ];
-
-        let memberKeyPerms = [];
-        if (member) {
-            memberKeyPerms = keyPermissions.filter(perm => member.permissions.has(perm));
-        }
+        const warnings = warningsDB.get(interaction.guild.id, targetUser.id);
+        const warningCount = warnings ? warnings.length : 0;
 
         let rolesText = 'None';
         if (member) {
@@ -75,41 +27,19 @@ module.exports = {
                 .sort((a, b) => b.position - a.position)
                 .map(r => `<@&${r.id}>`);
             if (roles.length > 0) {
-                rolesText = roles.length > 15 
-                    ? `${roles.slice(0, 15).join(', ')} ... (+${roles.length - 15} more)`
-                    : roles.join(', ');
+                rolesText = roles.length > 10 ? `${roles.slice(0, 10).join(', ')} ... (+${roles.length - 10} more)` : roles.join(', ');
             }
         }
 
-        const userWarnings = warningsDB.get(interaction.guild.id, targetUser.id);
-        const warningCount = userWarnings ? userWarnings.length : 0;
+        const embed = new PremiumEmbed()
+            .title(targetUser.tag)
+            .thumbnail(targetUser.displayAvatarURL({ dynamic: true }))
+            .field('Identity', `**ID** • \`${targetUser.id}\`\n**Account Type** • ${targetUser.bot ? 'Bot' : 'User'}\n**Warnings** • ${warningCount}`, false)
+            .field('Dates', `**Created** • <t:${Math.floor(targetUser.createdTimestamp / 1000)}:R>${member?.joinedTimestamp ? `\n**Joined** • <t:${Math.floor(member.joinedTimestamp / 1000)}:R>` : ''}`, false)
+            .field('Roles', rolesText, false)
+            .build();
 
-        const card = new V2Card()
-            .setAccent(member?.displayHexColor && member?.displayHexColor !== '#000000' ? member.displayHexColor : 'primary')
-            .setTitle(`[USER INTELLIGENCE] ${targetUser.tag}`, `Discord Identifier: \`${targetUser.id}\``)
-            .addField('Account Type', targetUser.bot ? 'Automated Application (Bot)' : 'Standard User Account', true)
-            .addField('Network Status', `[${statusText}]`, true)
-            .addField('Warning History', `**${warningCount}** recorded incident(s)`, true)
-            .addField('Account Created', `<t:${Math.floor(targetUser.createdTimestamp / 1000)}:F> (<t:${Math.floor(targetUser.createdTimestamp / 1000)}:R>)`, true);
-
-        if (member && member.joinedTimestamp) {
-            card.addField('Guild Joined', `<t:${Math.floor(member.joinedTimestamp / 1000)}:F> (<t:${Math.floor(member.joinedTimestamp / 1000)}:R>)`, true);
-        }
-
-        if (badges.length > 0) {
-            card.addField('Badges & Recognitions', badges.join('  '), false);
-        }
-
-        if (member) {
-            card.addField(`Assigned Roles (${member.roles.cache.size - 1})`, rolesText, false);
-            if (memberKeyPerms.length > 0) {
-                card.addField('Administrative & Elevated Permissions', memberKeyPerms.map(p => `\`${p}\``).join(', '), false);
-            }
-        }
-
-        card.setFooter(`Requested by ${interaction.user.tag}`);
-        await card.reply(interaction);
-
-        logger.info(`Userinfo accessed for ${targetUser.tag} by ${interaction.user.tag}`);
+        await interaction.reply({ embeds: [embed] });
+        logger.info(`Userinfo checked for ${targetUser.tag} by ${interaction.user.tag}`);
     },
 };

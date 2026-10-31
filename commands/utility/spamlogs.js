@@ -1,49 +1,50 @@
-const { PermissionFlagsBits } = require('discord.js');
-const { V2Card, V2Templates } = require('../../utils/v2Components');
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { UI } = require('../../utils/embedBuilder');
 const spamLogs = require('../../utils/spamLogs');
 const logger = require('../../utils/logger');
 
 module.exports = {
-    data: {
-        name: 'spamlogs',
-        description: 'View recent automated spam detections and rate-limit triggers.',
-        options: [],
-        default_member_permissions: PermissionFlagsBits.ModerateMembers,
-    },
+    name: 'spamlogs',
+    description: 'View recent automated spam detections and rate-limit triggers.',
+    category: 'utility',
+
+    data: new SlashCommandBuilder()
+        .setName('spamlogs')
+        .setDescription('View recent automated spam detections and rate-limit triggers')
+        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
 
     async execute(interaction) {
         if (!interaction.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
-            return V2Templates.error(
-                'Permission Denied',
-                'You lack the required `Moderate Members` permission to view spam detection logs.'
-            ).reply(interaction, { ephemeral: true });
+            return interaction.reply({
+                embeds: [UI.error('Permission Denied', 'You lack the Moderate Members permission.')],
+                ephemeral: true,
+            });
         }
 
-        const logs = spamLogs.getAll().slice(0, 15);
+        const logs = spamLogs.getAll().slice(0, 10);
 
         if (logs.length === 0) {
-            return V2Templates.info(
-                'No Spam Incidents Recorded',
-                'The automated anti-spam filter has not detected any violations in recent memory.'
-            ).reply(interaction);
+            return interaction.reply({
+                embeds: [UI.info('No Incidents', 'The automated spam filter has not recorded any recent violations.')],
+                ephemeral: true,
+            });
         }
 
-        const card = new V2Card()
-            .setAccent('warning')
-            .setTitle('[SPAM LOGS] Automated Anti-Spam Detections', 'Recent messages intercepted by the heuristic filter.')
-            .setDescription(`Displaying **${Math.min(logs.length, 10)}** most recent trigger events:`);
+        const embed = UI.embed()
+            .color('warning')
+            .title('Automated Spam Detections')
+            .desc(`Displaying ${logs.length} most recent trigger events:`);
 
-        for (const log of logs.slice(0, 10)) {
-            card.addField(
-                `[INTERCEPT] ${log.type ? log.type.toUpperCase() : 'SPAM'} — ${log.user}`,
-                `**Channel:** #${log.channel}\n**Snippet:** \`${log.content ? log.content.substring(0, 80) : 'None'}\`\n**Timestamp:** ${log.time}`,
+        for (const log of logs) {
+            const typeStr = log.type ? log.type.toUpperCase() : 'SPAM';
+            embed.field(
+                `[${typeStr}] ${log.user}`,
+                `Channel: #${log.channel} • Time: ${log.time}\nSnippet: \`${log.content ? log.content.substring(0, 80) : 'None'}\``,
                 false
             );
         }
 
-        card.setFooter(`Anti-Spam Engine • Requested by ${interaction.user.tag}`);
-        await card.reply(interaction);
-
+        await interaction.reply({ embeds: [embed.build()] });
         logger.info(`Spamlogs accessed by ${interaction.user.tag}`);
     },
 };

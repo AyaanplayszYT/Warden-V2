@@ -1,45 +1,38 @@
-const { PermissionFlagsBits, ButtonStyle, ComponentType } = require('discord.js');
-const { V2Templates } = require('../../utils/v2Components');
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { UI } = require('../../utils/embedBuilder');
 const warningsDB = require('../../utils/warningsDB');
 const logger = require('../../utils/logger');
 const ms = require('ms');
 const fs = require('fs');
 const path = require('path');
 
-const MAX_TIMEOUT_MS = 28 * 24 * 60 * 60 * 1000; // 28 days
+const MAX_TIMEOUT = 28 * 24 * 60 * 60 * 1000;
 
 module.exports = {
-    data: {
-        name: 'mute',
-        description: 'Timeout a user for a specified duration.',
-        options: [
-            {
-                name: 'user',
-                description: 'The user to timeout',
-                type: 6, // USER
-                required: true,
-            },
-            {
-                name: 'duration',
-                description: 'Timeout duration (e.g., 10m, 1h, 1d)',
-                type: 3, // STRING
-                required: true,
-            },
-            {
-                name: 'reason',
-                description: 'Reason for the timeout',
-                type: 3, // STRING
-                required: false,
-            },
-            {
-                name: 'silent',
-                description: 'Suppress direct message notification to user',
-                type: 5, // BOOLEAN
-                required: false,
-            },
-        ],
-        default_member_permissions: PermissionFlagsBits.ModerateMembers,
-    },
+    data: new SlashCommandBuilder()
+        .setName('mute')
+        .setDescription('Timeout a member for a specified duration')
+        .addUserOption(opt =>
+            opt.setName('user')
+                .setDescription('The user to timeout')
+                .setRequired(true)
+        )
+        .addStringOption(opt =>
+            opt.setName('duration')
+                .setDescription('Duration (e.g. 10m, 1h, 1d)')
+                .setRequired(true)
+        )
+        .addStringOption(opt =>
+            opt.setName('reason')
+                .setDescription('Reason for the timeout')
+                .setRequired(false)
+        )
+        .addBooleanOption(opt =>
+            opt.setName('silent')
+                .setDescription('Do not send DM notification to user')
+                .setRequired(false)
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
 
     async execute(interaction) {
         const targetUser = interaction.options.getUser('user');
@@ -47,48 +40,41 @@ module.exports = {
         const reason = interaction.options.getString('reason') || 'No reason provided';
         const silent = interaction.options.getBoolean('silent') || false;
 
-        const targetMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
+        const member = interaction.guild.members.cache.get(targetUser.id) || await interaction.guild.members.fetch(targetUser.id).catch(() => null);
 
-        if (!interaction.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
-            return V2Templates.error(
-                'Permission Denied',
-                'You lack the required `Moderate Members` permission to execute this command.'
-            ).reply(interaction, { ephemeral: true });
-        }
-
-        if (!targetMember) {
-            return V2Templates.error(
-                'Member Not Found',
-                `Target **${targetUser.tag}** (\`${targetUser.id}\`) is not currently present in this server.`
-            ).reply(interaction, { ephemeral: true });
+        if (!member) {
+            return interaction.reply({
+                embeds: [UI.error('Member Not Found', 'That user is not present in this server.')],
+                ephemeral: true,
+            });
         }
 
         if (targetUser.id === interaction.user.id) {
-            return V2Templates.error(
-                'Invalid Target',
-                'Self-targeting is prohibited. You cannot timeout yourself.'
-            ).reply(interaction, { ephemeral: true });
+            return interaction.reply({
+                embeds: [UI.error('Action Denied', 'You cannot timeout yourself.')],
+                ephemeral: true,
+            });
         }
 
         if (targetUser.id === interaction.client.user.id) {
-            return V2Templates.error(
-                'Invalid Target',
-                'Action rejected. The bot cannot timeout its own account.'
-            ).reply(interaction, { ephemeral: true });
+            return interaction.reply({
+                embeds: [UI.error('Action Denied', 'The bot cannot timeout its own account.')],
+                ephemeral: true,
+            });
         }
 
-        if (!targetMember.moderatable) {
-            return V2Templates.error(
-                'Hierarchy Restriction',
-                'Target cannot be timed out due to role hierarchy constraints.'
-            ).reply(interaction, { ephemeral: true });
+        if (!member.moderatable) {
+            return interaction.reply({
+                embeds: [UI.error('Hierarchy Error', 'Cannot timeout this member due to role hierarchy or missing permissions.')],
+                ephemeral: true,
+            });
         }
 
-        if (interaction.member.roles.highest.position <= targetMember.roles.highest.position) {
-            return V2Templates.error(
-                'Hierarchy Restriction',
-                'Target possesses a role equal to or higher than your highest role.'
-            ).reply(interaction, { ephemeral: true });
+        if (interaction.member.roles.highest.position <= member.roles.highest.position && interaction.user.id !== interaction.guild.ownerId) {
+            return interaction.reply({
+                embeds: [UI.error('Hierarchy Error', 'You cannot timeout a user with a role equal to or higher than yours.')],
+                ephemeral: true,
+            });
         }
 
         let durationMs;
@@ -98,118 +84,60 @@ module.exports = {
             durationMs = null;
         }
 
-        if (!durationMs || durationMs < 5000 || durationMs > MAX_TIMEOUT_MS) {
-            return V2Templates.error(
-                'Invalid Duration',
-                'Duration must be between 5 seconds and 28 days (e.g. `10m`, `2h`, `1d`).'
-            ).reply(interaction, { ephemeral: true });
+        if (!durationMs || durationMs < 5000 || durationMs > MAX_TIMEOUT) {
+            return interaction.reply({
+                embeds: [UI.error('Invalid Duration', 'Duration must be between 5 seconds and 28 days (e.g. `10m`, `2h`, `1d`).')],
+                ephemeral: true,
+            });
         }
 
-        const formattedDuration = ms(durationMs, { long: true });
+        const formatted = ms(durationMs, { long: true });
 
-        // Instant Confirmation dialog
-        const { card: confirmCard, row: confirmRow } = V2Templates.confirmation({
-            title: 'Confirm Timeout Enforcement',
-            description: `Review parameters below and confirm temporary communication restriction for **${targetUser.tag}**.`,
-            fields: [
-                { name: 'Target Account', value: `${targetUser.tag} (\`${targetUser.id}\`)`, inline: true },
-                { name: 'Duration', value: formattedDuration, inline: true },
-                { name: 'Reason', value: reason, inline: true },
-            ],
-            confirmLabel: 'Confirm Timeout',
-            cancelLabel: 'Cancel',
-            confirmStyle: ButtonStyle.Danger,
-        });
-
-        const confirmMessage = await interaction.reply({
-            ...confirmCard.toPayload(),
-            fetchReply: true,
-        });
-
-        try {
-            const buttonInteraction = await confirmMessage.awaitMessageComponent({
-                componentType: ComponentType.Button,
-                filter: i => i.user.id === interaction.user.id,
-                time: 30000,
-            });
-
-            if (buttonInteraction.customId === 'confirm_no') {
-                return V2Templates.info(
-                    'Action Aborted',
-                    `Timeout enforcement for **${targetUser.tag}** was cancelled by operator.`
-                ).update(buttonInteraction);
-            }
-
-            await buttonInteraction.deferUpdate();
-
-            let dmSent = false;
-            if (!silent) {
-                try {
-                    const dmCard = V2Templates.modDM({
-                        action: 'mute',
-                        guildName: interaction.guild.name,
-                        moderator: interaction.user,
-                        reason,
-                        duration: formattedDuration,
-                    });
-                    await dmCard.send(targetUser);
-                    dmSent = true;
-                } catch (error) {
-                    logger.warn(`Could not deliver mute notification DM to ${targetUser.tag}.`);
-                }
-            }
-
-            await targetMember.timeout(durationMs, `[Warden Timeout] By ${interaction.user.tag}: ${reason}`);
-
-            const warning = warningsDB.add(interaction.guild.id, targetUser.id, {
-                moderatorId: interaction.user.id,
-                moderatorTag: interaction.user.tag,
-                reason,
-                type: 'mute',
-            });
-
-            const successCard = V2Templates.modAction({
-                action: 'mute',
-                target: targetUser,
-                moderator: interaction.user,
-                reason,
-                duration: formattedDuration,
-                caseId: warning.caseId,
-                dmSent,
-            });
-
-            await logToModChannel(interaction.guild, successCard);
-            await successCard.editReply(buttonInteraction);
-
-            logger.info(`${interaction.user.tag} timed out ${targetUser.tag} for ${formattedDuration}. Reason: ${reason}`);
-
-        } catch (error) {
-            if (error.code === 'InteractionCollectorError') {
-                return V2Templates.warning(
-                    'Operation Timed Out',
-                    'Confirmation expired after 30 seconds of inactivity. No changes were applied.'
-                ).editReply(interaction);
-            }
-
-            logger.error('Error during mute command execution:', error);
-            return V2Templates.error(
-                'Execution Failure',
-                'An unexpected error occurred while executing the timeout action.'
-            ).editReply(interaction);
+        if (!silent) {
+            try {
+                const dmEmbed = UI.modDM({
+                    action: 'mute',
+                    guildName: interaction.guild.name,
+                    reason,
+                    duration: formatted,
+                });
+                await targetUser.send({ embeds: [dmEmbed] });
+            } catch (err) {}
         }
+
+        await member.timeout(durationMs, `${interaction.user.tag}: ${reason}`);
+
+        const warning = warningsDB.add(interaction.guild.id, targetUser.id, {
+            moderatorId: interaction.user.id,
+            moderatorTag: interaction.user.tag,
+            reason,
+            type: 'mute',
+        });
+
+        const embed = UI.mod({
+            action: 'mute',
+            target: targetUser,
+            moderator: interaction.user,
+            reason,
+            duration: formatted,
+            caseId: warning.caseId,
+        });
+
+        await interaction.reply({ embeds: [embed] });
+        await logToMod(interaction.guild, embed);
+
+        logger.info(`${interaction.user.tag} timed out ${targetUser.tag} for ${formatted}. Reason: ${reason}`);
     },
 };
 
-async function logToModChannel(guild, card) {
+async function logToMod(guild, embed) {
     try {
-        const logChannels = JSON.parse(fs.readFileSync(path.join(__dirname, '../../data/logChannels.json'), 'utf8'));
-        if (logChannels.modLog) {
-            const modLogChannel = guild.channels.cache.get(logChannels.modLog);
-            if (modLogChannel) {
-                await card.send(modLogChannel);
-            }
+        const filePath = path.join(__dirname, '../../data/logChannels.json');
+        if (!fs.existsSync(filePath)) return;
+        const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        if (data.modLog) {
+            const ch = guild.channels.cache.get(data.modLog);
+            if (ch) await ch.send({ embeds: [embed] });
         }
-    } catch (error) {
-        logger.warn('Could not dispatch log to mod channel:', error);
-    }
+    } catch (e) {}
 }

@@ -3,7 +3,6 @@ const path = require('path');
 const { REST, Routes } = require('discord.js');
 require('dotenv').config();
 
-// Validate required environment variables
 if (!process.env.DISCORD_TOKEN) {
     console.error('[ERROR] DISCORD_TOKEN is not defined in .env');
     process.exit(1);
@@ -15,10 +14,10 @@ if (!process.env.CLIENT_ID) {
 }
 
 const commands = [];
-const commandsPath = path.join(__dirname, 'commands');
+const commandsPath = path.resolve(__dirname, 'commands');
 const commandFolders = fs.readdirSync(commandsPath);
 
-console.log('[DEPLOY] Loading command specifications...\n');
+console.log('[DEPLOY] Loading application commands...\n');
 
 for (const folder of commandFolders) {
     const folderPath = path.join(commandsPath, folder);
@@ -33,22 +32,15 @@ for (const folder of commandFolders) {
             delete require.cache[require.resolve(filePath)];
             const command = require(filePath);
 
-            if ('data' in command && command.data.name) {
-                const commandData = {
-                    name: command.data.name,
-                    description: command.data.description || 'No description provided',
-                    options: command.data.options || [],
-                    dm_permission: false,
-                };
+            if ('data' in command) {
+                const commandJSON = typeof command.data.toJSON === 'function'
+                    ? command.data.toJSON()
+                    : command.data;
 
-                if (command.data.default_member_permissions) {
-                    commandData.default_member_permissions = command.data.default_member_permissions.toString();
-                }
-
-                commands.push(commandData);
-                console.log(`   + /${command.data.name}`);
+                commands.push(commandJSON);
+                console.log(`   + /${commandJSON.name}`);
             } else {
-                console.log(`   [WARN] ${file} - Missing required 'data' property`);
+                console.log(`   [WARN] ${file} - Missing required 'data' export`);
             }
         } catch (error) {
             console.log(`   [FAIL] ${file} - Error: ${error.message}`);
@@ -63,7 +55,7 @@ const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
 (async () => {
     try {
-        console.log('[REST] Synchronizing application slash commands with Discord API...\n');
+        console.log('[REST] Synchronizing slash commands with Discord API...\n');
 
         if (process.env.GUILD_ID) {
             console.log(`[REST] Deploying to target guild: ${process.env.GUILD_ID}`);
@@ -81,20 +73,7 @@ const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
             console.log(`[SUCCESS] Deployed ${data.length} global commands.`);
         }
 
-        console.log('\n[REGISTRY SUMMARY]');
-        console.log('─'.repeat(50));
-
-        const modCommands = commands.filter(c => c.default_member_permissions);
-        const utilCommands = commands.filter(c => !c.default_member_permissions);
-
-        console.log(`Moderation Commands (${modCommands.length}):`);
-        modCommands.forEach(c => console.log(`   /${c.name}`));
-
-        console.log(`\nUtility & Intelligence Commands (${utilCommands.length}):`);
-        utilCommands.forEach(c => console.log(`   /${c.name}`));
-
-        console.log('─'.repeat(50));
-        console.log('[COMPLETE] Deployment process finished successfully.\n');
+        console.log('\n[COMPLETE] Deployment process finished successfully.\n');
 
     } catch (error) {
         console.error('[ERROR] Command deployment failed:', error);

@@ -1,5 +1,5 @@
-const { PermissionFlagsBits } = require('discord.js');
-const { V2Card, V2Templates } = require('../../utils/v2Components');
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { UI } = require('../../utils/embedBuilder');
 const warningsDB = require('../../utils/warningsDB');
 const logger = require('../../utils/logger');
 
@@ -17,34 +17,35 @@ function getTypeBadge(type) {
 }
 
 module.exports = {
-    data: {
-        name: 'modlogs',
-        description: 'View recent moderation actions and server audit statistics.',
-        options: [
-            {
-                name: 'limit',
-                description: 'Number of actions to inspect (default: 10)',
-                type: 4, // INTEGER
-                required: false,
-                min_value: 1,
-                max_value: 50,
-            },
-            {
-                name: 'user',
-                description: 'Filter logs by a specific user account',
-                type: 6, // USER
-                required: false,
-            },
-        ],
-        default_member_permissions: PermissionFlagsBits.ModerateMembers,
-    },
+    name: 'modlogs',
+    description: 'View recent moderation actions and server audit statistics.',
+    category: 'utility',
+
+    data: new SlashCommandBuilder()
+        .setName('modlogs')
+        .setDescription('View recent moderation actions and server audit statistics')
+        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
+        .addIntegerOption(option =>
+            option
+                .setName('limit')
+                .setDescription('Number of actions to inspect (default: 10)')
+                .setMinValue(1)
+                .setMaxValue(50)
+                .setRequired(false)
+        )
+        .addUserOption(option =>
+            option
+                .setName('user')
+                .setDescription('Filter logs by a specific user')
+                .setRequired(false)
+        ),
 
     async execute(interaction) {
         if (!interaction.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
-            return V2Templates.error(
-                'Permission Denied',
-                'You lack the required `Moderate Members` permission to inspect moderation logs.'
-            ).reply(interaction, { ephemeral: true });
+            return interaction.reply({
+                embeds: [UI.error('Permission Denied', 'You lack the Moderate Members permission.')],
+                ephemeral: true,
+            });
         }
 
         const limit = interaction.options.getInteger('limit') || 10;
@@ -58,35 +59,36 @@ module.exports = {
         }
 
         if (filtered.length === 0) {
-            return V2Templates.info(
-                'No Audit Logs Found',
-                filterUser
-                    ? `No moderation actions recorded for **${filterUser.tag}** (\`${filterUser.id}\`).`
-                    : 'No moderation records found in this server\'s audit database.'
-            ).reply(interaction);
+            return interaction.reply({
+                embeds: [
+                    UI.info(
+                        'No Audit Logs Found',
+                        filterUser
+                            ? `No moderation actions recorded for **${filterUser.tag}** (\`${filterUser.id}\`).`
+                            : 'No moderation records found in this server\'s audit database.'
+                    ),
+                ],
+                ephemeral: true,
+            });
         }
 
         const logsToShow = filtered.slice(0, limit);
-        const card = new V2Card()
-            .setAccent('primary')
-            .setTitle(
-                filterUser ? `[MODERATION LOGS] ${filterUser.tag}` : '[SERVER AUDIT LOGS] Recent Actions',
-                `Displaying ${logsToShow.length} of ${filtered.length} total logged incident(s).`
-            );
+        const embed = UI.embed()
+            .color('primary')
+            .title(filterUser ? `Moderation Logs: ${filterUser.tag}` : 'Server Moderation Logs')
+            .desc(`Displaying ${logsToShow.length} of ${filtered.length} total logged action(s).`);
 
         logsToShow.forEach(log => {
             const badge = getTypeBadge(log.type);
             const ts = Math.floor(new Date(log.timestamp).getTime() / 1000);
-            card.addField(
+            embed.field(
                 `Case #${log.caseId} ${badge}`,
-                `**Target:** <@${log.userId}>\n**Moderator:** ${log.moderatorTag}\n**Reason:** ${log.reason}\n**Date:** <t:${ts}:R>`,
+                `Target: <@${log.userId}> • Moderator: ${log.moderatorTag}\nReason: ${log.reason}\nDate: <t:${ts}:R>`,
                 false
             );
         });
 
-        card.setFooter(`Guild Audit Registry • Requested by ${interaction.user.tag}`);
-        await card.reply(interaction);
-
+        await interaction.reply({ embeds: [embed.build()] });
         logger.info(`Modlogs viewed by ${interaction.user.tag} (count: ${logsToShow.length})`);
     },
 };

@@ -1,50 +1,52 @@
-const { PermissionFlagsBits, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
-const { V2Card, V2Templates } = require('../../utils/v2Components');
+const { SlashCommandBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+const { UI } = require('../../utils/embedBuilder');
 const logger = require('../../utils/logger');
 const fs = require('fs');
 const path = require('path');
 
 const COLOR_ROLES = [
-    { name: 'Crimson Red', color: '#ED4245', value: 'color_crimson' },
-    { name: 'Ocean Blue', color: '#3498DB', value: 'color_blue' },
-    { name: 'Emerald Green', color: '#57F287', value: 'color_green' },
-    { name: 'Warm Amber', color: '#FEE75C', value: 'color_amber' },
-    { name: 'Amethyst Purple', color: '#9B59B6', value: 'color_purple' },
-    { name: 'Sunset Orange', color: '#F27A3A', value: 'color_orange' },
+    { name: 'Crimson Red', color: '#ED4245' },
+    { name: 'Ocean Blue', color: '#3498DB' },
+    { name: 'Emerald Green', color: '#57F287' },
+    { name: 'Warm Amber', color: '#FEE75C' },
+    { name: 'Amethyst Purple', color: '#9B59B6' },
+    { name: 'Sunset Orange', color: '#F27A3A' },
 ];
 
 module.exports = {
-    data: {
-        name: 'setupcolors',
-        description: 'Provision color roles and deploy an interactive role selection component.',
-        options: [
-            {
-                name: 'channel',
-                description: 'The channel to deploy the color selector to',
-                type: 7, // CHANNEL
-                required: true,
-            },
-        ],
-        default_member_permissions: PermissionFlagsBits.Administrator,
-    },
+    name: 'setupcolors',
+    description: 'Provision color roles and deploy an interactive role selection component.',
+    category: 'utility',
+
+    data: new SlashCommandBuilder()
+        .setName('setupcolors')
+        .setDescription('Provision color roles and deploy an interactive role selection component')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addChannelOption(option =>
+            option
+                .setName('channel')
+                .setDescription('The channel to deploy the color selector to')
+                .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+                .setRequired(true)
+        ),
 
     async execute(interaction) {
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-            return V2Templates.error(
-                'Permission Denied',
-                'You lack the required `Administrator` permission to configure role systems.'
-            ).reply(interaction, { ephemeral: true });
+            return interaction.reply({
+                embeds: [UI.error('Permission Denied', 'You lack the Administrator permission.')],
+                ephemeral: true,
+            });
         }
 
-        const channel = interaction.options.getChannel('channel') || interaction.channel;
+        const channel = interaction.options.getChannel('channel');
         const guild = interaction.guild;
 
         const perms = channel.permissionsFor(guild.members.me);
-        if (!perms.has(PermissionFlagsBits.SendMessages)) {
-            return V2Templates.error(
-                'Missing Permissions',
-                `Warden lacks permission to send messages in <#${channel.id}>.`
-            ).reply(interaction, { ephemeral: true });
+        if (!perms || !perms.has(PermissionFlagsBits.SendMessages)) {
+            return interaction.reply({
+                embeds: [UI.error('Missing Permissions', `Bot lacks permission to send messages in <#${channel.id}>.`)],
+                ephemeral: true,
+            });
         }
 
         const createdRoleIds = {};
@@ -56,14 +58,14 @@ module.exports = {
                         name: roleData.name,
                         color: roleData.color,
                         mentionable: false,
-                        reason: `[Warden Role Provisioning] Automated color setup by ${interaction.user.tag}`,
+                        reason: `Color role setup by ${interaction.user.tag}`,
                     });
                 } catch (err) {
                     logger.error(`Failed to create color role ${roleData.name}:`, err);
-                    return V2Templates.error(
-                        'Role Provisioning Failed',
-                        `Failed to create role \`${roleData.name}\`: ${err.message}`
-                    ).reply(interaction, { ephemeral: true });
+                    return interaction.reply({
+                        embeds: [UI.error('Role Creation Failed', `Failed to create role \`${roleData.name}\`: ${err.message}`)],
+                        ephemeral: true,
+                    });
                 }
             }
             createdRoleIds[roleData.name] = role.id;
@@ -71,38 +73,44 @@ module.exports = {
 
         const selectMenu = new StringSelectMenuBuilder()
             .setCustomId('color_role_select')
-            .setPlaceholder('Select your vanity color profile...')
+            .setPlaceholder('Select vanity color...')
             .addOptions([
                 ...COLOR_ROLES.map(r => ({
                     label: r.name,
-                    description: `Hex Code: ${r.color}`,
+                    description: `Hex: ${r.color}`,
                     value: r.name,
                 })),
                 {
-                    label: 'Remove Color Role',
-                    description: 'Strip all vanity color roles from your account',
+                    label: 'Remove Color',
+                    description: 'Remove your vanity color role',
                     value: 'none',
                 },
             ]);
 
         const row = new ActionRowBuilder().addComponents(selectMenu);
 
-        const card = new V2Card()
-            .setAccent('primary')
-            .setTitle('[IDENTITY] Color Profile Selector')
-            .setDescription(
+        const embed = UI.embed()
+            .color('primary')
+            .title('Color Profile Selector')
+            .desc(
                 'Customize your username appearance in this server by selecting a vanity color role below.\n\n' +
                 COLOR_ROLES.map(r => `• **${r.name}** (\`${r.color}\`)`).join('\n') +
-                '\n\n*Select an option from the menu to apply or switch your color instantly.*'
+                '\n\n*Select an option from the menu to apply or switch your color.*'
             )
-            .setFooter('Warden Identity Customization');
-
-        card.addActionRow(row);
+            .footer('Identity Customization');
 
         try {
-            const sentMsg = await channel.send(card.toPayload());
+            const sentMsg = await channel.send({
+                embeds: [embed.build()],
+                components: [row],
+            });
 
-            const dataPath = path.join(__dirname, '../../data/colorRoles.json');
+            const dataDir = path.join(__dirname, '../../data');
+            if (!fs.existsSync(dataDir)) {
+                fs.mkdirSync(dataDir, { recursive: true });
+            }
+
+            const dataPath = path.join(dataDir, 'colorRoles.json');
             const saveData = {
                 messageId: sentMsg.id,
                 channelId: channel.id,
@@ -111,16 +119,15 @@ module.exports = {
             };
             fs.writeFileSync(dataPath, JSON.stringify(saveData, null, 2));
 
-            return V2Templates.success(
-                'Color System Deployed',
-                `Color roles verified and interactive selector deployed to <#${channel.id}>.`
-            ).reply(interaction, { ephemeral: true });
-
+            return interaction.reply({
+                embeds: [UI.success('Color System Deployed', `Color roles verified and selector deployed to <#${channel.id}>.`)],
+                ephemeral: true,
+            });
         } catch (err) {
-            return V2Templates.error(
-                'Dispatch Failed',
-                `Failed to send component message to <#${channel.id}>: ${err.message}`
-            ).reply(interaction, { ephemeral: true });
+            return interaction.reply({
+                embeds: [UI.error('Deployment Failed', `Failed to send selector to <#${channel.id}>: ${err.message}`)],
+                ephemeral: true,
+            });
         }
     },
 };

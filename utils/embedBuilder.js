@@ -1,86 +1,62 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const colors = require('../config/colors.json');
-const emojis = require('../config/emojis.json');
 const { embedFooter } = require('../config/config.json');
-const { V2Card, V2Templates, resolveColorNumber } = require('./v2Components');
+
+function resolveColor(c) {
+    if (typeof c === 'number') return c;
+    if (colors[c]) c = colors[c];
+    if (typeof c === 'string') {
+        const parsed = parseInt(c.replace('#', ''), 16);
+        return isNaN(parsed) ? 0x2B2D31 : parsed;
+    }
+    return 0x2B2D31;
+}
 
 /**
- * Warden Embed Builder - Clean, high-contrast, emoji-free modern embeds
+ * Premium Minimal Embed Builder
  */
-class WardenEmbed {
+class PremiumEmbed {
     constructor() {
-        this.embed = new EmbedBuilder();
-        this.embed.setColor(resolveColorNumber(colors.primary || '#5865F2'));
-        this.embed.setFooter({ text: embedFooter || 'Warden | Security & Utility' });
-        this.embed.setTimestamp();
+        this.embed = new EmbedBuilder()
+            .setColor(resolveColor('primary'))
+            .setFooter({ text: embedFooter || 'Warden' })
+            .setTimestamp();
     }
 
-    setType(type) {
-        const color = resolveColorNumber(colors[type] || colors.primary);
-        this.embed.setColor(color);
+    color(c) {
+        this.embed.setColor(resolveColor(c));
         return this;
     }
 
-    setColor(color) {
-        this.embed.setColor(resolveColorNumber(color));
+    title(t) {
+        if (t) this.embed.setTitle(t);
         return this;
     }
 
-    setTitle(title) {
-        this.embed.setTitle(title);
+    desc(d) {
+        if (d) this.embed.setDescription(d);
         return this;
     }
 
-    setDescription(description) {
-        this.embed.setDescription(description);
+    field(name, value, inline = false) {
+        if (name && value !== undefined && value !== null) {
+            this.embed.addFields({ name: String(name), value: String(value), inline: Boolean(inline) });
+        }
         return this;
     }
 
-    setThumbnail(url) {
+    thumbnail(url) {
         if (url) this.embed.setThumbnail(url);
         return this;
     }
 
-    setImage(url) {
+    image(url) {
         if (url) this.embed.setImage(url);
         return this;
     }
 
-    setAuthor(nameOrOptions, iconURL, url) {
-        if (typeof nameOrOptions === 'object' && nameOrOptions !== null) {
-            this.embed.setAuthor(nameOrOptions);
-        } else {
-            const authorData = { name: nameOrOptions };
-            if (iconURL) authorData.iconURL = iconURL;
-            if (url) authorData.url = url;
-            this.embed.setAuthor(authorData);
-        }
-        return this;
-    }
-
-    addField(name, value, inline = false) {
-        this.embed.addFields({ name, value, inline });
-        return this;
-    }
-
-    addFields(...fields) {
-        this.embed.addFields(...fields);
-        return this;
-    }
-
-    setFooter(textOrOptions, iconURL) {
-        if (typeof textOrOptions === 'object' && textOrOptions !== null) {
-            this.embed.setFooter(textOrOptions);
-        } else {
-            const footerData = { text: textOrOptions };
-            if (iconURL) footerData.iconURL = iconURL;
-            this.embed.setFooter(footerData);
-        }
-        return this;
-    }
-
-    setTimestamp(timestamp = new Date()) {
-        this.embed.setTimestamp(timestamp);
+    footer(text) {
+        if (text) this.embed.setFooter({ text });
         return this;
     }
 
@@ -88,238 +64,126 @@ class WardenEmbed {
         return this.embed;
     }
 
-    toPayload() {
+    toPayload(components = []) {
+        const comp = Array.isArray(components) ? components : [components];
         return {
             embeds: [this.embed],
-            components: []
+            components: comp.filter(Boolean)
         };
     }
 }
 
-const EmbedTemplates = {
+/**
+ * Quick templates for minimal, premium responses
+ */
+const UI = {
+    embed() {
+        return new PremiumEmbed();
+    },
+
     success(title, description) {
-        return new WardenEmbed()
-            .setType('success')
-            .setTitle(`[SUCCESS] ${title}`)
-            .setDescription(description)
+        return new PremiumEmbed()
+            .color('success')
+            .title(title)
+            .desc(description)
             .build();
     },
 
     error(title, description) {
-        return new WardenEmbed()
-            .setType('error')
-            .setTitle(`[ERROR] ${title}`)
-            .setDescription(description)
+        return new PremiumEmbed()
+            .color('error')
+            .title(title)
+            .desc(description)
             .build();
     },
 
     warning(title, description) {
-        return new WardenEmbed()
-            .setType('warning')
-            .setTitle(`[WARNING] ${title}`)
-            .setDescription(description)
+        return new PremiumEmbed()
+            .color('warning')
+            .title(title)
+            .desc(description)
             .build();
     },
 
     info(title, description) {
-        return new WardenEmbed()
-            .setType('info')
-            .setTitle(`[INFO] ${title}`)
-            .setDescription(description)
+        return new PremiumEmbed()
+            .color('info')
+            .title(title)
+            .desc(description)
             .build();
     },
 
-    modAction(options) {
-        const {
-            action,
-            target,
-            moderator,
-            reason,
-            duration,
-            caseId,
-            dmSent,
-        } = options;
-
-        const actionTitles = {
-            ban: '[BANNED] User Banned',
-            kick: '[KICKED] User Kicked',
-            mute: '[MUTED] User Timed Out',
-            warn: '[WARNED] User Warned',
-            unban: '[UNBANNED] User Ban Revoked',
-            unmute: '[UNMUTED] User Timeout Removed',
-            softban: '[SOFTBANNED] User Softbanned',
-            tempban: '[TEMPBANNED] User Temporarily Banned',
+    mod(options) {
+        const { action, target, moderator, reason, duration, caseId, extra } = options;
+        const colorMap = {
+            ban: 'error',
+            kick: 'error',
+            mute: 'warning',
+            warn: 'warning',
+            unban: 'success',
+            unmute: 'success',
+            softban: 'error',
+        };
+        const titleMap = {
+            ban: 'User Banned',
+            kick: 'User Kicked',
+            mute: 'User Timed Out',
+            warn: 'Warning Issued',
+            unban: 'Ban Revoked',
+            unmute: 'Timeout Removed',
+            softban: 'User Softbanned',
         };
 
-        const embed = new WardenEmbed()
-            .setType(action)
-            .setTitle(actionTitles[action] || `[MOD ACTION] ${action.toUpperCase()}`)
-            .setThumbnail(target.displayAvatarURL?.() || target.avatarURL?.() || null);
+        const targetTag = target?.user?.tag || target?.tag || 'Unknown';
+        const targetId = target?.user?.id || target?.id || 'Unknown';
+        const modTag = moderator ? (moderator.tag || 'System') : 'System';
 
-        const targetTag = target.user?.tag || target.tag || 'Unknown';
-        const targetId = target.user?.id || target.id || 'Unknown';
-        embed.addField('Target', `${targetTag}\n\`${targetId}\``, true);
+        let desc = `**Target** • ${targetTag} (\`${targetId}\`)\n**Moderator** • ${modTag}\n**Reason** • ${reason || 'No reason provided'}`;
+        if (duration) desc += `\n**Duration** • ${duration}`;
+        if (extra) desc += `\n${extra}`;
 
-        if (moderator) {
-            embed.addField('Moderator', `${moderator.tag}\n\`${moderator.id}\``, true);
-        }
-
-        if (duration) {
-            embed.addField('Duration', duration, true);
-        }
-
-        embed.addField('Reason', reason || 'No reason provided', false);
+        const embed = new PremiumEmbed()
+            .color(colorMap[action] || 'primary')
+            .title(titleMap[action] || 'Moderation Action')
+            .desc(desc);
 
         if (caseId) {
-            embed.addField('Case ID', `#${caseId}`, true);
-        }
-
-        if (dmSent !== undefined) {
-            embed.addField('DM Status', dmSent ? 'Delivered' : 'Failed / Blocked', true);
+            embed.footer(`Case #${caseId} • ${embedFooter || 'Warden'}`);
         }
 
         return embed.build();
     },
 
     modDM(options) {
-        const {
-            action,
-            guildName,
-            guildIcon,
-            moderator,
-            reason,
-            duration,
-            appealInfo,
-        } = options;
-
-        const actionMessages = {
-            ban: 'You have been banned from',
-            kick: 'You have been kicked from',
-            mute: 'You have been muted in',
-            warn: 'You have been warned in',
-            tempban: 'You have been temporarily banned from',
+        const { action, guildName, reason, duration } = options;
+        const titleMap = {
+            ban: 'Banned from',
+            kick: 'Kicked from',
+            mute: 'Timed out in',
+            warn: 'Warning received in',
+            softban: 'Softbanned from',
         };
 
-        const embed = new WardenEmbed()
-            .setType(action === 'warn' ? 'warn' : action === 'mute' ? 'mute' : 'ban')
-            .setTitle(`[MODERATION] ${actionMessages[action] || 'Action in'} ${guildName}`)
-            .setThumbnail(guildIcon);
+        let desc = `You were subject to a moderation action in **${guildName}**.\n**Action** • ${titleMap[action] || 'Notice'} ${guildName}\n**Reason** • ${reason || 'No reason provided'}`;
+        if (duration) desc += `\n**Duration** • ${duration}`;
 
-        if (moderator) {
-            embed.addField('Moderator', moderator.tag, true);
-        }
-
-        if (duration) {
-            embed.addField('Duration', duration, true);
-        }
-
-        embed.addField('Reason', reason || 'No reason provided', false);
-
-        if (appealInfo) {
-            embed.addField('Appeal', appealInfo, false);
-        }
-
-        return embed.build();
-    },
-
-    log(options) {
-        const {
-            type,
-            title,
-            description,
-            fields,
-            thumbnail,
-            image,
-        } = options;
-
-        const embed = new WardenEmbed()
-            .setType(type || 'info')
-            .setTitle(`[LOG] ${title}`);
-
-        if (description) embed.setDescription(description);
-        if (thumbnail) embed.setThumbnail(thumbnail);
-        if (image) embed.setImage(image);
-        if (fields && fields.length > 0) {
-            embed.addFields(...fields);
-        }
-
-        return embed.build();
-    },
-
-    pagination(pages, currentPage = 0) {
-        return {
-            embed: pages[currentPage],
-            currentPage,
-            totalPages: pages.length,
-            row: new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('page_first')
-                    .setLabel('First')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(currentPage === 0),
-                new ButtonBuilder()
-                    .setCustomId('page_prev')
-                    .setLabel('Previous')
-                    .setStyle(ButtonStyle.Primary)
-                    .setDisabled(currentPage === 0),
-                new ButtonBuilder()
-                    .setCustomId('page_indicator')
-                    .setLabel(`${currentPage + 1} / ${pages.length}`)
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(true),
-                new ButtonBuilder()
-                    .setCustomId('page_next')
-                    .setLabel('Next')
-                    .setStyle(ButtonStyle.Primary)
-                    .setDisabled(currentPage >= pages.length - 1),
-                new ButtonBuilder()
-                    .setCustomId('page_last')
-                    .setLabel('Last')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(currentPage >= pages.length - 1)
-            ),
-        };
-    },
-};
-
-const ConfirmationDialog = {
-    create(options) {
-        const {
-            title,
-            description,
-            confirmLabel = 'Confirm',
-            cancelLabel = 'Cancel',
-            confirmStyle = ButtonStyle.Danger,
-            timeout = 30000,
-        } = options;
-
-        const embed = new WardenEmbed()
-            .setType('warning')
-            .setTitle(`[CONFIRMATION] ${title}`)
-            .setDescription(description)
+        return new PremiumEmbed()
+            .color('warning')
+            .title(`Moderation Notice • ${guildName}`)
+            .desc(desc)
             .build();
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('confirm_yes')
-                .setLabel(confirmLabel)
-                .setStyle(confirmStyle),
-            new ButtonBuilder()
-                .setCustomId('confirm_no')
-                .setLabel(cancelLabel)
-                .setStyle(ButtonStyle.Secondary)
-        );
-
-        return { embed, row, timeout };
-    },
+    }
 };
+
+// Aliases for compatibility
+const EmbedTemplates = UI;
+const WardenEmbed = PremiumEmbed;
 
 module.exports = {
-    WardenEmbed,
+    UI,
+    PremiumEmbed,
     EmbedTemplates,
-    ConfirmationDialog,
-    V2Card,
-    V2Templates,
+    WardenEmbed,
+    resolveColor,
     colors,
-    emojis,
 };

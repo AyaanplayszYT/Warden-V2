@@ -1,5 +1,5 @@
-const { SlashCommandBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, ComponentType } = require('discord.js');
-const { V2Card, V2Templates } = require('../../utils/v2Components');
+const { SlashCommandBuilder } = require('discord.js');
+const { UI, PremiumEmbed } = require('../../utils/embedBuilder');
 const ms = require('ms');
 const fs = require('fs');
 const path = require('path');
@@ -12,7 +12,7 @@ try {
     if (fs.existsSync(remindersPath)) {
         reminders = JSON.parse(fs.readFileSync(remindersPath, 'utf8'));
     }
-} catch (error) {
+} catch (e) {
     reminders = [];
 }
 
@@ -21,198 +21,130 @@ function saveReminders() {
 }
 
 module.exports = {
-    name: 'remind',
-    description: 'Schedule automated reminders with time triggers.',
-    usage: 'remind <set|list|clear|cancel>',
-    category: 'utility',
-    reminders,
     data: new SlashCommandBuilder()
         .setName('remind')
-        .setDescription('Schedule and manage automated reminders')
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('set')
-                .setDescription('Register a new automated reminder')
-                .addStringOption(option =>
-                    option.setName('time')
-                        .setDescription('When to remind you (e.g., 10m, 1h, 2d)')
-                        .setRequired(true)
-                )
-                .addStringOption(option =>
-                    option.setName('message')
-                        .setDescription('Reminder message text')
-                        .setRequired(true)
-                )
+        .setDescription('Set and manage personal reminders')
+        .addSubcommand(sub =>
+            sub.setName('set')
+                .setDescription('Set a new reminder')
+                .addStringOption(opt => opt.setName('time').setDescription('When to remind you (e.g. 10m, 1h, 1d)').setRequired(true))
+                .addStringOption(opt => opt.setName('message').setDescription('Reminder message').setRequired(true))
         )
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('list')
-                .setDescription('List all your active pending reminders')
+        .addSubcommand(sub =>
+            sub.setName('list')
+                .setDescription('List your active reminders')
         )
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('clear')
-                .setDescription('Clear all your scheduled reminders')
+        .addSubcommand(sub =>
+            sub.setName('clear')
+                .setDescription('Clear all your reminders')
         )
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('cancel')
+        .addSubcommand(sub =>
+            sub.setName('cancel')
                 .setDescription('Cancel a specific reminder by ID')
-                .addIntegerOption(option =>
-                    option.setName('id')
-                        .setDescription('The reminder ID to cancel')
-                        .setRequired(true)
-                )
+                .addIntegerOption(opt => opt.setName('id').setDescription('Reminder ID').setRequired(true))
         ),
 
     async execute(interaction, client) {
-        const subcommand = interaction.options?.getSubcommand() || 'set';
-        const userId = interaction.user.id;
+        const sub = interaction.options.getSubcommand();
+        const uid = interaction.user.id;
 
-        switch (subcommand) {
-            case 'set': {
-                const timeInput = interaction.options.getString('time');
-                const message = interaction.options.getString('message');
+        if (sub === 'set') {
+            const timeStr = interaction.options.getString('time');
+            const message = interaction.options.getString('message');
+            const duration = ms(timeStr);
 
-                const duration = ms(timeInput);
-
-                if (!duration || duration < 60000) {
-                    return V2Templates.error(
-                        'Invalid Duration Format',
-                        'Minimum reminder duration is `1 minute`.\n\n**Valid Syntax Examples:**\n• `10m` — 10 minutes\n• `1h` — 1 hour\n• `1d` — 1 day\n• `1w` — 1 week'
-                    ).reply(interaction, { ephemeral: true });
-                }
-
-                if (duration > 30 * 24 * 60 * 60 * 1000) {
-                    return V2Templates.error(
-                        'Duration Limit Exceeded',
-                        'Reminders cannot be scheduled more than 30 days into the future.'
-                    ).reply(interaction, { ephemeral: true });
-                }
-
-                const reminderTime = Date.now() + duration;
-                const reminder = {
-                    id: Date.now(),
-                    userId,
-                    channelId: interaction.channel.id,
-                    guildId: interaction.guild.id,
-                    message,
-                    createdAt: Date.now(),
-                    remindAt: reminderTime,
-                };
-
-                reminders.push(reminder);
-                saveReminders();
-
-                scheduleReminder(client, reminder);
-
-                const card = new V2Card()
-                    .setAccent('success')
-                    .setTitle('[REMINDER REGISTERED] Automated Alert Set')
-                    .setDescription(`Warden will deliver this reminder in **${ms(duration, { long: true })}**.`)
-                    .addField('Reminder Content', message.substring(0, 1024), false)
-                    .addField('Scheduled Trigger Time', `<t:${Math.floor(reminderTime / 1000)}:F> (<t:${Math.floor(reminderTime / 1000)}:R>)`, false)
-                    .setFooter(`Reminder ID: ${reminder.id}`);
-
-                return card.reply(interaction);
-            }
-
-            case 'list': {
-                const userReminders = reminders.filter(r => r.userId === userId);
-
-                if (userReminders.length === 0) {
-                    return V2Templates.info(
-                        'No Active Reminders',
-                        'You currently have zero scheduled reminders pending in queue.'
-                    ).reply(interaction, { ephemeral: true });
-                }
-
-                const card = new V2Card()
-                    .setAccent('primary')
-                    .setTitle(`[ACTIVE REMINDERS] ${interaction.user.tag}`)
-                    .setDescription(
-                        userReminders.slice(0, 10).map((r, i) =>
-                            `**${i + 1}.** ${r.message.substring(0, 60)}${r.message.length > 60 ? '...' : ''}\n` +
-                            `   Trigger: <t:${Math.floor(r.remindAt / 1000)}:R> • ID: \`${r.id}\``
-                        ).join('\n\n')
-                    )
-                    .setFooter(`Total Reminders: ${userReminders.length}`);
-
-                return card.reply(interaction, { ephemeral: true });
-            }
-
-            case 'clear': {
-                const userReminders = reminders.filter(r => r.userId === userId);
-
-                if (userReminders.length === 0) {
-                    return V2Templates.info(
-                        'No Reminders to Clear',
-                        'You currently have no scheduled reminders.'
-                    ).reply(interaction, { ephemeral: true });
-                }
-
-                const { card: confirmCard, row: confirmRow } = V2Templates.confirmation({
-                    title: 'Clear All Scheduled Reminders',
-                    description: `Are you sure you want to permanently clear all **${userReminders.length}** pending reminder(s)?`,
-                    confirmLabel: `Clear ${userReminders.length} Reminder(s)`,
-                    cancelLabel: 'Keep Reminders',
-                    confirmStyle: ButtonStyle.Danger,
-                });
-
-                const replyMsg = await interaction.reply({
-                    ...confirmCard.toPayload(),
-                    components: [confirmCard.buildContainer()],
+            if (!duration || duration < 60000) {
+                return interaction.reply({
+                    embeds: [UI.error('Invalid Duration', 'Minimum reminder duration is 1 minute (e.g. `10m`, `1h`, `1d`).')],
                     ephemeral: true,
-                    fetchReply: true,
                 });
-
-                const collector = replyMsg.createMessageComponentCollector({
-                    componentType: ComponentType.Button,
-                    filter: i => i.user.id === userId,
-                    time: 30000,
-                    max: 1,
-                });
-
-                collector.on('collect', async i => {
-                    if (i.customId === 'confirm_yes') {
-                        reminders = reminders.filter(r => r.userId !== userId);
-                        saveReminders();
-
-                        return V2Templates.success(
-                            'Reminders Cleared',
-                            `All **${userReminders.length}** scheduled reminder(s) have been cancelled.`
-                        ).update(i);
-                    } else {
-                        return V2Templates.info(
-                            'Action Aborted',
-                            'Reminder queue remains active and unmodified.'
-                        ).update(i);
-                    }
-                });
-
-                break;
             }
 
-            case 'cancel': {
-                const reminderId = interaction.options.getInteger('id');
-                const reminderIndex = reminders.findIndex(r => r.id === reminderId && r.userId === userId);
-
-                if (reminderIndex === -1) {
-                    return V2Templates.error(
-                        'Reminder Not Found',
-                        'No pending reminder matching that ID was found under your account.'
-                    ).reply(interaction, { ephemeral: true });
-                }
-
-                const cancelled = reminders[reminderIndex];
-                reminders.splice(reminderIndex, 1);
-                saveReminders();
-
-                return V2Templates.success(
-                    'Reminder Cancelled',
-                    `Reminder \`#${cancelled.id}\` ("${cancelled.message.substring(0, 40)}") has been removed.`
-                ).reply(interaction, { ephemeral: true });
+            if (duration > 30 * 24 * 60 * 60 * 1000) {
+                return interaction.reply({
+                    embeds: [UI.error('Duration Too Long', 'Reminders cannot exceed 30 days.')],
+                    ephemeral: true,
+                });
             }
+
+            const remindAt = Date.now() + duration;
+            const reminder = {
+                id: Date.now(),
+                userId: uid,
+                channelId: interaction.channel.id,
+                guildId: interaction.guild.id,
+                message,
+                createdAt: Date.now(),
+                remindAt,
+            };
+
+            reminders.push(reminder);
+            saveReminders();
+            scheduleReminder(client, reminder);
+
+            const embed = UI.success(
+                'Reminder Scheduled',
+                `I will remind you in **${ms(duration, { long: true })}**.\n**Message** • ${message}\n**Trigger** • <t:${Math.floor(remindAt / 1000)}:R>\n**ID** • \`${reminder.id}\``
+            );
+
+            return interaction.reply({ embeds: [embed] });
+
+        } else if (sub === 'list') {
+            const userRems = reminders.filter(r => r.userId === uid);
+            if (userRems.length === 0) {
+                return interaction.reply({
+                    embeds: [UI.info('No Reminders', 'You have no active reminders scheduled.')],
+                    ephemeral: true,
+                });
+            }
+
+            const desc = userRems.slice(0, 10).map((r, i) =>
+                `**${i + 1}.** ${r.message.substring(0, 60)}${r.message.length > 60 ? '...' : ''}\nTrigger: <t:${Math.floor(r.remindAt / 1000)}:R> • ID: \`${r.id}\``
+            ).join('\n\n');
+
+            const embed = new PremiumEmbed()
+                .title('Active Reminders')
+                .desc(desc)
+                .footer(`Total: ${userRems.length}`)
+                .build();
+
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+
+        } else if (sub === 'clear') {
+            const userRems = reminders.filter(r => r.userId === uid);
+            if (userRems.length === 0) {
+                return interaction.reply({
+                    embeds: [UI.info('No Reminders', 'You have no active reminders to clear.')],
+                    ephemeral: true,
+                });
+            }
+
+            reminders = reminders.filter(r => r.userId !== uid);
+            saveReminders();
+
+            return interaction.reply({
+                embeds: [UI.success('Reminders Cleared', `Cleared **${userRems.length}** reminder(s).`)],
+                ephemeral: true,
+            });
+
+        } else if (sub === 'cancel') {
+            const id = interaction.options.getInteger('id');
+            const idx = reminders.findIndex(r => r.id === id && r.userId === uid);
+
+            if (idx === -1) {
+                return interaction.reply({
+                    embeds: [UI.error('Not Found', `No reminder with ID \`${id}\` was found under your account.`)],
+                    ephemeral: true,
+                });
+            }
+
+            reminders.splice(idx, 1);
+            saveReminders();
+
+            return interaction.reply({
+                embeds: [UI.success('Reminder Cancelled', `Reminder \`#${id}\` has been removed.`)],
+                ephemeral: true,
+            });
         }
     },
 
@@ -221,58 +153,41 @@ module.exports = {
         reminders = reminders.filter(r => r.remindAt > now);
         saveReminders();
 
-        reminders.forEach(reminder => {
-            scheduleReminder(client, reminder);
-        });
-
+        reminders.forEach(reminder => scheduleReminder(client, reminder));
         logger.info(`Loaded ${reminders.length} pending reminders`);
     },
 };
 
 function scheduleReminder(client, reminder) {
     const delay = reminder.remindAt - Date.now();
-
     if (delay <= 0) {
-        const index = reminders.findIndex(r => r.id === reminder.id);
-        if (index !== -1) {
-            reminders.splice(index, 1);
-            saveReminders();
-        }
+        reminders = reminders.filter(r => r.id !== reminder.id);
+        saveReminders();
         return;
     }
 
     setTimeout(async () => {
         try {
-            const channel = await client.channels.fetch(reminder.channelId).catch(() => null);
+            const ch = await client.channels.fetch(reminder.channelId).catch(() => null);
             const user = await client.users.fetch(reminder.userId).catch(() => null);
-
             if (!user) return;
 
-            const card = new V2Card()
-                .setAccent('info')
-                .setTitle('[REMINDER ALERT] Scheduled Notification')
-                .setDescription(reminder.message)
-                .addField('Scheduled', `<t:${Math.floor(reminder.createdAt / 1000)}:R>`, true)
-                .setFooter('Warden Automated Reminders');
+            const embed = new PremiumEmbed()
+                .title('Reminder Alert')
+                .desc(reminder.message)
+                .footer('Warden')
+                .build();
 
-            if (channel) {
-                await channel.send({
-                    content: `<@${reminder.userId}>`,
-                    ...card.toPayload()
-                }).catch(() => {
-                    card.send(user).catch(() => {});
+            if (ch) {
+                await ch.send({ content: `<@${reminder.userId}>`, embeds: [embed] }).catch(() => {
+                    user.send({ embeds: [embed] }).catch(() => {});
                 });
             } else {
-                await card.send(user).catch(() => {});
+                await user.send({ embeds: [embed] }).catch(() => {});
             }
 
-            const index = reminders.findIndex(r => r.id === reminder.id);
-            if (index !== -1) {
-                reminders.splice(index, 1);
-                saveReminders();
-            }
-        } catch (error) {
-            logger.error('Error delivering scheduled reminder:', error);
-        }
+            reminders = reminders.filter(r => r.id !== reminder.id);
+            saveReminders();
+        } catch (e) {}
     }, Math.min(delay, 2147483647));
 }

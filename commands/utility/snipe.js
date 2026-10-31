@@ -1,5 +1,5 @@
-const { SlashCommandBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js');
-const { V2Card, V2Templates } = require('../../utils/v2Components');
+const { SlashCommandBuilder } = require('discord.js');
+const { UI } = require('../../utils/embedBuilder');
 const logger = require('../../utils/logger');
 
 const snipeCache = new Map();
@@ -9,20 +9,21 @@ const MAX_SNIPES = 10;
 module.exports = {
     name: 'snipe',
     description: 'Retrieve recently deleted or edited messages in the channel.',
-    usage: 'snipe [deleted|edited|clear]',
     category: 'utility',
     snipeCache,
     editSnipeCache,
+
     data: new SlashCommandBuilder()
         .setName('snipe')
         .setDescription('Retrieve recently deleted or edited messages')
         .addSubcommand(subcommand =>
             subcommand
                 .setName('deleted')
-                .setDescription('Snipe a deleted message')
+                .setDescription('View a recently deleted message')
                 .addIntegerOption(option =>
-                    option.setName('number')
-                        .setDescription('Index of deleted message to view (1 = most recent)')
+                    option
+                        .setName('number')
+                        .setDescription('Message index (1 = most recent)')
                         .setMinValue(1)
                         .setMaxValue(10)
                         .setRequired(false)
@@ -31,10 +32,11 @@ module.exports = {
         .addSubcommand(subcommand =>
             subcommand
                 .setName('edited')
-                .setDescription('Snipe an edited message')
+                .setDescription('View a recently edited message')
                 .addIntegerOption(option =>
-                    option.setName('number')
-                        .setDescription('Index of edited message to view (1 = most recent)')
+                    option
+                        .setName('number')
+                        .setDescription('Message index (1 = most recent)')
                         .setMinValue(1)
                         .setMaxValue(10)
                         .setRequired(false)
@@ -43,69 +45,66 @@ module.exports = {
         .addSubcommand(subcommand =>
             subcommand
                 .setName('clear')
-                .setDescription('Clear cached snipes for this channel')
+                .setDescription('Clear cached messages for this channel')
         ),
 
     async execute(interaction) {
-        const subcommand = interaction.options?.getSubcommand() || 'deleted';
-        const number = interaction.options?.getInteger('number') || 1;
+        const subcommand = interaction.options.getSubcommand() || 'deleted';
+        const number = interaction.options.getInteger('number') || 1;
         const channelId = interaction.channel.id;
 
         if (subcommand === 'clear') {
             snipeCache.delete(channelId);
             editSnipeCache.delete(channelId);
 
-            return V2Templates.success(
-                'Cache Purged',
-                'Snipe history for this channel has been cleared.'
-            ).reply(interaction, { ephemeral: true });
+            return interaction.reply({
+                embeds: [UI.success('Cache Cleared', 'Snipe history for this channel has been purged.')],
+                ephemeral: true,
+            });
         }
 
         const cache = subcommand === 'deleted' ? snipeCache : editSnipeCache;
         const channelSnipes = cache.get(channelId);
 
         if (!channelSnipes || channelSnipes.length === 0) {
-            return V2Templates.warning(
-                'No Messages Cached',
-                `No ${subcommand} messages found in this channel's memory cache.`
-            ).reply(interaction, { ephemeral: true });
+            return interaction.reply({
+                embeds: [UI.info('No Records Found', `No ${subcommand} messages cached in this channel.`)],
+                ephemeral: true,
+            });
         }
 
         const index = Math.min(number - 1, channelSnipes.length - 1);
         const snipe = channelSnipes[index];
 
         if (!snipe) {
-            return V2Templates.error(
-                'Record Not Found',
-                `No cached ${subcommand} message found at index #${number}.`
-            ).reply(interaction, { ephemeral: true });
+            return interaction.reply({
+                embeds: [UI.error('Not Found', `No cached ${subcommand} message found at index #${number}.`)],
+                ephemeral: true,
+            });
         }
 
-        const card = new V2Card()
-            .setAccent(subcommand === 'deleted' ? 'error' : 'warning')
-            .setTitle(
-                subcommand === 'deleted' ? '[SNIPE] Deleted Message Record' : '[SNIPE] Edited Message Audit',
-                `Author: ${snipe.author.tag} (\`${snipe.author.id}\`) • Record #${index + 1} of ${channelSnipes.length}`
-            );
+        const embed = UI.embed()
+            .color(subcommand === 'deleted' ? 'error' : 'warning')
+            .title(subcommand === 'deleted' ? 'Deleted Message Record' : 'Edited Message Audit')
+            .desc(`Author: **${snipe.author.tag}** (\`${snipe.author.id}\`) • Index: ${index + 1}/${channelSnipes.length}`);
 
         if (subcommand === 'deleted') {
-            card.addField('Message Content', snipe.content || '*No text content*', false);
+            embed.field('Content', snipe.content ? snipe.content.substring(0, 1024) : '*No text content*', false);
         } else {
-            card.addField('Original Content (Before)', snipe.oldContent?.substring(0, 1024) || '*No text content*', false);
-            card.addField('Revised Content (After)', snipe.newContent?.substring(0, 1024) || '*No text content*', false);
+            embed.field('Original', snipe.oldContent ? snipe.oldContent.substring(0, 1024) : '*No text content*', false);
+            embed.field('Revised', snipe.newContent ? snipe.newContent.substring(0, 1024) : '*No text content*', false);
         }
 
-        if (snipe.attachments?.length > 0) {
+        if (snipe.attachments && snipe.attachments.length > 0) {
             const attachmentLinks = snipe.attachments.map((a, i) => `[Attachment ${i + 1}](${a})`).join('\n');
-            card.addField('Attached Files', attachmentLinks, false);
+            embed.field('Attachments', attachmentLinks, false);
         }
 
         if (snipe.timestamp) {
-            card.addField('Recorded Timestamp', `<t:${Math.floor(snipe.timestamp / 1000)}:R>`, true);
+            embed.field('Timestamp', `<t:${Math.floor(snipe.timestamp / 1000)}:R>`, true);
         }
 
-        card.setFooter(`Snipe Cache • Channel: #${interaction.channel.name}`);
-        return card.reply(interaction);
+        return interaction.reply({ embeds: [embed.build()] });
     },
 
     addDeletedMessage(channelId, message) {

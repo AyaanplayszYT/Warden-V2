@@ -1,5 +1,5 @@
-const { PermissionFlagsBits } = require('discord.js');
-const { V2Templates } = require('../../utils/v2Components');
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { UI } = require('../../utils/embedBuilder');
 const warningsDB = require('../../utils/warningsDB');
 const logger = require('../../utils/logger');
 const { maxWarnings } = require('../../config/config.json');
@@ -7,88 +7,70 @@ const fs = require('fs');
 const path = require('path');
 
 module.exports = {
-    data: {
-        name: 'warn',
-        description: 'Issue an official recorded warning to a user.',
-        options: [
-            {
-                name: 'user',
-                description: 'The user to warn',
-                type: 6, // USER
-                required: true,
-            },
-            {
-                name: 'reason',
-                description: 'Reason for the warning',
-                type: 3, // STRING
-                required: false,
-            },
-            {
-                name: 'silent',
-                description: 'Suppress direct message notification to user',
-                type: 5, // BOOLEAN
-                required: false,
-            },
-        ],
-        default_member_permissions: PermissionFlagsBits.ModerateMembers,
-    },
+    data: new SlashCommandBuilder()
+        .setName('warn')
+        .setDescription('Issue an official warning to a member')
+        .addUserOption(opt =>
+            opt.setName('user')
+                .setDescription('The user to warn')
+                .setRequired(true)
+        )
+        .addStringOption(opt =>
+            opt.setName('reason')
+                .setDescription('Reason for the warning')
+                .setRequired(false)
+        )
+        .addBooleanOption(opt =>
+            opt.setName('silent')
+                .setDescription('Do not send DM notification to user')
+                .setRequired(false)
+        )
+        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
 
     async execute(interaction) {
         const targetUser = interaction.options.getUser('user');
         const reason = interaction.options.getString('reason') || 'No reason provided';
         const silent = interaction.options.getBoolean('silent') || false;
 
-        const targetMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
+        const member = interaction.guild.members.cache.get(targetUser.id) || await interaction.guild.members.fetch(targetUser.id).catch(() => null);
 
-        if (!interaction.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
-            return V2Templates.error(
-                'Permission Denied',
-                'You lack the required `Moderate Members` permission to execute this command.'
-            ).reply(interaction, { ephemeral: true });
-        }
-
-        if (!targetMember) {
-            return V2Templates.error(
-                'Member Not Found',
-                `Target **${targetUser.tag}** (\`${targetUser.id}\`) is not currently present in this server.`
-            ).reply(interaction, { ephemeral: true });
+        if (!member) {
+            return interaction.reply({
+                embeds: [UI.error('Member Not Found', 'That user is not present in this server.')],
+                ephemeral: true,
+            });
         }
 
         if (targetUser.id === interaction.user.id) {
-            return V2Templates.error(
-                'Invalid Target',
-                'Self-targeting is prohibited. You cannot warn yourself.'
-            ).reply(interaction, { ephemeral: true });
+            return interaction.reply({
+                embeds: [UI.error('Action Denied', 'You cannot warn yourself.')],
+                ephemeral: true,
+            });
         }
 
         if (targetUser.id === interaction.client.user.id) {
-            return V2Templates.error(
-                'Invalid Target',
-                'Action rejected. The bot cannot warn its own account.'
-            ).reply(interaction, { ephemeral: true });
+            return interaction.reply({
+                embeds: [UI.error('Action Denied', 'The bot cannot warn its own account.')],
+                ephemeral: true,
+            });
         }
 
-        if (interaction.member.roles.highest.position <= targetMember.roles.highest.position) {
-            return V2Templates.error(
-                'Hierarchy Restriction',
-                'Target possesses a role equal to or higher than your highest role.'
-            ).reply(interaction, { ephemeral: true });
+        if (interaction.member.roles.highest.position <= member.roles.highest.position && interaction.user.id !== interaction.guild.ownerId) {
+            return interaction.reply({
+                embeds: [UI.error('Hierarchy Error', 'You cannot warn a user with a role equal to or higher than yours.')],
+                ephemeral: true,
+            });
         }
 
-        let dmSent = false;
         if (!silent) {
             try {
-                const dmCard = V2Templates.modDM({
+                const dmEmbed = UI.modDM({
                     action: 'warn',
                     guildName: interaction.guild.name,
-                    moderator: interaction.user,
                     reason,
                 });
-                await dmCard.send(targetUser);
-                dmSent = true;
-            } catch (error) {
-                logger.warn(`Could not deliver warning notification DM to ${targetUser.tag}.`);
-            }
+                await targetUser.send({ embeds: [dmEmbed] });
+            } catch (err) {}
         }
 
         const warning = warningsDB.add(interaction.guild.id, targetUser.id, {
@@ -99,37 +81,32 @@ module.exports = {
         });
 
         const userWarnings = warningsDB.get(interaction.guild.id, targetUser.id);
-        const warningCount = userWarnings.length;
+        const count = userWarnings.length;
 
-        const card = V2Templates.modAction({
+        const embed = UI.mod({
             action: 'warn',
             target: targetUser,
             moderator: interaction.user,
             reason,
             caseId: warning.caseId,
-            dmSent,
-            extraFields: [
-                { name: 'Total Warnings', value: `${warningCount} / ${maxWarnings || 5}`, inline: true },
-            ],
+            extra: `**Total Warnings** • ${count} / ${maxWarnings || 5}`,
         });
 
-        await logToModChannel(interaction.guild, card);
-        await card.reply(interaction);
+        await interaction.reply({ embeds: [embed] });
+        await logToMod(interaction.guild, embed);
 
-        logger.info(`${interaction.user.tag} warned ${targetUser.tag} (Case #${warning.caseId}). Total: ${warningCount}`);
+        logger.info(`${interaction.user.tag} warned ${targetUser.tag}. Case #${warning.caseId}`);
     },
 };
 
-async function logToModChannel(guild, card) {
+async function logToMod(guild, embed) {
     try {
-        const logChannels = JSON.parse(fs.readFileSync(path.join(__dirname, '../../data/logChannels.json'), 'utf8'));
-        if (logChannels.modLog) {
-            const modLogChannel = guild.channels.cache.get(logChannels.modLog);
-            if (modLogChannel) {
-                await card.send(modLogChannel);
-            }
+        const filePath = path.join(__dirname, '../../data/logChannels.json');
+        if (!fs.existsSync(filePath)) return;
+        const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        if (data.modLog) {
+            const ch = guild.channels.cache.get(data.modLog);
+            if (ch) await ch.send({ embeds: [embed] });
         }
-    } catch (error) {
-        logger.warn('Could not dispatch log to mod channel:', error);
-    }
+    } catch (e) {}
 }

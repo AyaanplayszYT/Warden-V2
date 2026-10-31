@@ -1,6 +1,6 @@
 const { Events, InteractionType } = require('discord.js');
 const logger = require('../utils/logger');
-const { V2Templates } = require('../utils/v2Components');
+const { UI } = require('../utils/embedBuilder');
 const fs = require('fs');
 const path = require('path');
 
@@ -13,10 +13,10 @@ module.exports = {
 
             if (!command) {
                 logger.warn(`Unknown command: /${interaction.commandName}`);
-                return V2Templates.error(
-                    'Command Not Found',
-                    'The requested command is not registered or has been removed.'
-                ).reply(interaction, { ephemeral: true });
+                return interaction.reply({
+                    embeds: [UI.error('Command Not Found', 'This command is not registered or has been removed.')],
+                    ephemeral: true,
+                });
             }
 
             try {
@@ -24,16 +24,16 @@ module.exports = {
             } catch (error) {
                 logger.error(`Error executing /${interaction.commandName}:`, error);
 
-                const errorCard = V2Templates.error(
+                const errorEmbed = UI.error(
                     'Execution Error',
-                    'An unexpected exception occurred while processing this command.'
+                    'An error occurred while processing this command. Please verify bot permissions and try again.'
                 );
 
                 try {
                     if (interaction.replied || interaction.deferred) {
-                        await errorCard.followUp(interaction, { ephemeral: true });
+                        await interaction.followUp({ embeds: [errorEmbed], ephemeral: true });
                     } else {
-                        await errorCard.reply(interaction, { ephemeral: true });
+                        await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
                     }
                 } catch (e) {}
             }
@@ -51,7 +51,7 @@ module.exports = {
             }
         }
 
-        // Handle Global String Select Menus (e.g., Color Roles)
+        // Handle String Select Menus (Color Roles)
         else if (interaction.isStringSelectMenu()) {
             if (interaction.customId === 'color_role_select') {
                 const selected = interaction.values[0];
@@ -67,7 +67,7 @@ module.exports = {
 
                 if (!colorData || !colorData.roles) {
                     return interaction.reply({
-                        content: 'Color configuration data not found.',
+                        embeds: [UI.error('Configuration Error', 'Color configuration data was not found.')],
                         ephemeral: true,
                     });
                 }
@@ -81,32 +81,32 @@ module.exports = {
                     }
 
                     if (selected === 'none') {
-                        return V2Templates.info(
-                            'Color Removed',
-                            'All vanity color roles have been stripped from your profile.'
-                        ).reply(interaction, { ephemeral: true });
+                        return interaction.reply({
+                            embeds: [UI.info('Color Removed', 'Your vanity color role has been removed.')],
+                            ephemeral: true,
+                        });
                     }
 
                     const targetRole = interaction.guild.roles.cache.find(r => r.name === selected);
                     if (!targetRole) {
-                        return V2Templates.error(
-                            'Role Not Found',
-                            `Role \`${selected}\` could not be found on this server.`
-                        ).reply(interaction, { ephemeral: true });
+                        return interaction.reply({
+                            embeds: [UI.error('Role Missing', `The role \`${selected}\` does not exist on this server.`)],
+                            ephemeral: true,
+                        });
                     }
 
                     await member.roles.add(targetRole);
-                    return V2Templates.success(
-                        'Color Updated',
-                        `Your display color role has been updated to **${selected}**.`
-                    ).reply(interaction, { ephemeral: true });
+                    return interaction.reply({
+                        embeds: [UI.success('Color Updated', `Your display color role is now **${selected}**.`)],
+                        ephemeral: true,
+                    });
 
                 } catch (err) {
                     logger.error(`Failed to assign color role to ${interaction.user.tag}:`, err);
-                    return V2Templates.error(
-                        'Assignment Failed',
-                        'Failed to modify your server roles. Please check bot hierarchy permissions.'
-                    ).reply(interaction, { ephemeral: true });
+                    return interaction.reply({
+                        embeds: [UI.error('Hierarchy Error', 'Failed to assign role. Ensure the bot role is positioned higher than color roles.')],
+                        ephemeral: true,
+                    });
                 }
             }
         }

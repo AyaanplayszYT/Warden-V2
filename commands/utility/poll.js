@@ -1,53 +1,19 @@
 const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
-const { V2Card } = require('../../utils/v2Components');
+const { PremiumEmbed } = require('../../utils/embedBuilder');
 const logger = require('../../utils/logger');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('poll')
-        .setDescription('Launch an interactive live poll with real-time voting.')
-        .addStringOption(option =>
-            option.setName('question')
-                .setDescription('The question being voted on')
-                .setRequired(true)
-        )
-        .addStringOption(option =>
-            option.setName('option1')
-                .setDescription('First choice option')
-                .setRequired(true)
-        )
-        .addStringOption(option =>
-            option.setName('option2')
-                .setDescription('Second choice option')
-                .setRequired(true)
-        )
-        .addStringOption(option =>
-            option.setName('option3')
-                .setDescription('Third choice option (optional)')
-                .setRequired(false)
-        )
-        .addStringOption(option =>
-            option.setName('option4')
-                .setDescription('Fourth choice option (optional)')
-                .setRequired(false)
-        )
-        .addStringOption(option =>
-            option.setName('option5')
-                .setDescription('Fifth choice option (optional)')
-                .setRequired(false)
-        )
-        .addIntegerOption(option =>
-            option.setName('duration')
-                .setDescription('Poll duration in minutes (default: indefinite)')
-                .setMinValue(1)
-                .setMaxValue(10080)
-                .setRequired(false)
-        )
-        .addBooleanOption(option =>
-            option.setName('anonymous')
-                .setDescription('Hide voter identities (default: false)')
-                .setRequired(false)
-        ),
+        .setDescription('Launch an interactive voting poll')
+        .addStringOption(opt => opt.setName('question').setDescription('Poll question').setRequired(true))
+        .addStringOption(opt => opt.setName('option1').setDescription('First option').setRequired(true))
+        .addStringOption(opt => opt.setName('option2').setDescription('Second option').setRequired(true))
+        .addStringOption(opt => opt.setName('option3').setDescription('Third option').setRequired(false))
+        .addStringOption(opt => opt.setName('option4').setDescription('Fourth option').setRequired(false))
+        .addStringOption(opt => opt.setName('option5').setDescription('Fifth option').setRequired(false))
+        .addIntegerOption(opt => opt.setName('duration').setDescription('Duration in minutes').setMinValue(1).setMaxValue(1440).setRequired(false))
+        .addBooleanOption(opt => opt.setName('anonymous').setDescription('Hide voter identities').setRequired(false)),
 
     async execute(interaction) {
         const question = interaction.options.getString('question');
@@ -56,122 +22,88 @@ module.exports = {
 
         const options = [];
         for (let i = 1; i <= 5; i++) {
-            const opt = interaction.options.getString(`option${i}`);
-            if (opt) options.push(opt);
+            const val = interaction.options.getString(`option${i}`);
+            if (val) options.push(val);
         }
 
-        const votes = new Map(); // option index -> Set of user IDs
-        const userVotes = new Map(); // user ID -> option index
+        const votes = new Map();
+        const userVotes = new Map();
         options.forEach((_, i) => votes.set(i, new Set()));
 
-        const buildPollCard = (ended = false) => {
-            const totalVotes = Array.from(votes.values()).reduce((acc, set) => acc + set.size, 0);
+        const makeEmbed = (ended = false) => {
+            const total = Array.from(votes.values()).reduce((sum, s) => sum + s.size, 0);
 
-            let maxVotes = 0;
-            let winningIndices = [];
-            options.forEach((_, i) => {
-                const count = votes.get(i).size;
-                if (count > maxVotes) {
-                    maxVotes = count;
-                    winningIndices = [i];
-                } else if (count === maxVotes && count > 0) {
-                    winningIndices.push(i);
-                }
-            });
-
-            const card = new V2Card()
-                .setAccent(ended ? 'secondary' : 'primary')
-                .setTitle(ended ? '[POLL CONCLUDED] Final Results' : '[ACTIVE POLL] Community Ballot')
-                .setDescription(`### ${question}\n`);
-
+            let desc = `### ${question}\n\n`;
             options.forEach((opt, i) => {
                 const count = votes.get(i).size;
-                const percentage = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
-                const barLength = 16;
-                const filled = totalVotes > 0 ? Math.round((count / totalVotes) * barLength) : 0;
-                const bar = '[' + '|'.repeat(filled) + '░'.repeat(barLength - filled) + ']';
+                const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                const barFilled = total > 0 ? Math.round((count / total) * 12) : 0;
+                const bar = '[' + '|'.repeat(barFilled) + '░'.repeat(12 - barFilled) + ']';
 
-                const isWinner = ended && maxVotes > 0 && winningIndices.includes(i);
-                const tag = isWinner ? ' [WINNER]' : '';
-
-                card.addField(
-                    `[OPTION ${i + 1}] ${opt}${tag}`,
-                    `\`${bar}\` **${percentage}%** (${count} vote${count !== 1 ? 's' : ''})`,
-                    false
-                );
+                desc += `**Option ${i + 1}** • ${opt}\n\`${bar}\` ${pct}% (${count} vote${count !== 1 ? 's' : ''})\n\n`;
             });
 
-            let footerText = `Total Cast Ballots: ${totalVotes}`;
-            if (anonymous) footerText += ' • Anonymous Voting';
+            let footer = `Total Votes: ${total}`;
+            if (anonymous) footer += ' • Anonymous';
             if (duration && !ended) {
-                const endTime = Math.floor((Date.now() + duration * 60000) / 1000);
-                footerText += ` • Closes <t:${endTime}:R>`;
-            }
-            card.setFooter(footerText);
-
-            if (!ended) {
-                const row = new ActionRowBuilder();
-                options.forEach((opt, i) => {
-                    row.addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`poll_vote_${i}`)
-                            .setLabel(`Option ${i + 1}`)
-                            .setStyle(ButtonStyle.Primary)
-                    );
-                });
-                card.addActionRow(row);
+                footer += ` • Ends in ${duration}m`;
             }
 
-            return card;
+            return new PremiumEmbed()
+                .title(ended ? 'Poll Results' : 'Active Poll')
+                .desc(desc.trim())
+                .footer(footer)
+                .build();
         };
 
-        const initialCard = buildPollCard(false);
-        const replyMsg = await interaction.reply({
-            ...initialCard.toPayload(),
-            components: [initialCard.buildContainer()],
+        const makeRow = () => {
+            const row = new ActionRowBuilder();
+            options.forEach((_, i) => {
+                row.addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`vote_${i}`)
+                        .setLabel(`Option ${i + 1}`)
+                        .setStyle(ButtonStyle.Secondary)
+                );
+            });
+            return row;
+        };
+
+        const msg = await interaction.reply({
+            embeds: [makeEmbed(false)],
+            components: [makeRow()],
             fetchReply: true,
         });
 
         const collectorTime = duration ? duration * 60000 : 86400000;
-        const collector = replyMsg.createMessageComponentCollector({
+        const collector = msg.createMessageComponentCollector({
             componentType: ComponentType.Button,
             time: collectorTime,
         });
 
-        collector.on('collect', async btnInter => {
-            const index = parseInt(btnInter.customId.replace('poll_vote_', ''), 10);
-            const userId = btnInter.user.id;
+        collector.on('collect', async btn => {
+            const idx = parseInt(btn.customId.replace('vote_', ''), 10);
+            const uid = btn.user.id;
+            const prev = userVotes.get(uid);
 
-            const previousVote = userVotes.get(userId);
-
-            if (previousVote === index) {
-                votes.get(index).delete(userId);
-                userVotes.delete(userId);
-                await btnInter.reply({ content: 'Your vote has been retracted.', ephemeral: true });
+            if (prev === idx) {
+                votes.get(idx).delete(uid);
+                userVotes.delete(uid);
+                await btn.reply({ content: 'Vote removed.', ephemeral: true });
             } else {
-                if (previousVote !== undefined) {
-                    votes.get(previousVote).delete(userId);
-                }
-                votes.get(index).add(userId);
-                userVotes.set(userId, index);
-                await btnInter.reply({ content: `Vote recorded for Option ${index + 1}: **${options[index]}**`, ephemeral: true });
+                if (prev !== undefined) votes.get(prev).delete(uid);
+                votes.get(idx).add(uid);
+                userVotes.set(uid, idx);
+                await btn.reply({ content: `Voted for Option ${idx + 1}: ${options[idx]}`, ephemeral: true });
             }
 
-            const updatedCard = buildPollCard(false);
-            await interaction.editReply({
-                ...updatedCard.toPayload(),
-                components: [updatedCard.buildContainer()]
-            }).catch(() => {});
+            await interaction.editReply({ embeds: [makeEmbed(false)] }).catch(() => {});
         });
 
         collector.on('end', async () => {
-            const endedCard = buildPollCard(true);
-            await interaction.editReply({
-                ...endedCard.toPayload(),
-                components: [endedCard.buildContainer()]
-            }).catch(() => {});
+            await interaction.editReply({ embeds: [makeEmbed(true)], components: [] }).catch(() => {});
         });
 
-        logger.info(`Poll created by ${interaction.user.tag}: "${question}"`);
+        logger.info(`Poll created by ${interaction.user.tag}: ${question}`);
     },
 };
