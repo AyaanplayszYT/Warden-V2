@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const { PermissionFlagsBits } = require('discord.js');
 const logger = require('./logger');
 
 const STICKERS_DIR = path.join(__dirname, '../emojies-stickers');
@@ -9,19 +8,7 @@ class StickerManager {
     constructor() {
         this.stickers = [];
         this.idMap = new Map();
-        this.webhookCache = new Map();
-        this.replacedMessageIds = new Set();
         this.load();
-    }
-
-    markReplacedMessage(messageId) {
-        if (!messageId) return;
-        this.replacedMessageIds.add(messageId);
-        setTimeout(() => this.replacedMessageIds.delete(messageId), 10000);
-    }
-
-    isReplacedMessage(messageId) {
-        return this.replacedMessageIds.has(messageId);
     }
 
     load() {
@@ -70,9 +57,8 @@ class StickerManager {
             sticker.aliases.forEach(a => this.idMap.set(a.toLowerCase(), sticker));
         }
 
-        // Sort alphabetically by ID
         this.stickers.sort((a, b) => a.id.localeCompare(b.id));
-        logger.info(`Loaded ${this.stickers.length} custom stickers & emojis`);
+        logger.info(`Loaded ${this.stickers.length} custom stickers & emojis (no-webhook native engine)`);
     }
 
     getAll() {
@@ -106,75 +92,6 @@ class StickerManager {
             name: `${s.id} (${s.isAnimated ? 'GIF' : 'PNG'})`,
             value: s.id,
         }));
-    }
-
-    async getWebhook(channel, client) {
-        if (!channel || !channel.guild || !channel.isTextBased() || channel.isDMBased()) return null;
-
-        const botMember = channel.guild.members.me;
-        if (!botMember || !channel.permissionsFor(botMember).has(PermissionFlagsBits.ManageWebhooks)) {
-            return null;
-        }
-
-        if (this.webhookCache.has(channel.id)) {
-            const cached = this.webhookCache.get(channel.id);
-            try {
-                // Verify webhook is still valid
-                if (cached.channelId === channel.id) return cached;
-            } catch (e) {
-                this.webhookCache.delete(channel.id);
-            }
-        }
-
-        try {
-            const webhooks = await channel.fetchWebhooks();
-            let hook = webhooks.find(w => w.owner?.id === client.user.id && w.name === 'Warden Stickers');
-
-            if (!hook) {
-                hook = await channel.createWebhook({
-                    name: 'Warden Stickers',
-                    avatar: client.user.displayAvatarURL(),
-                    reason: 'Custom Nitro-style sticker delivery',
-                });
-            }
-
-            this.webhookCache.set(channel.id, hook);
-            return hook;
-        } catch (err) {
-            logger.warn(`Could not manage webhook in #${channel.name}:`, err.message);
-            return null;
-        }
-    }
-
-    async sendAsUser({ channel, user, member, sticker, client, content = '' }) {
-        if (!sticker || !channel) return false;
-
-        const webhook = await this.getWebhook(channel, client);
-        if (webhook) {
-            try {
-                await webhook.send({
-                    content: content || undefined,
-                    username: member?.displayName || user.username,
-                    avatarURL: user.displayAvatarURL({ dynamic: true }),
-                    files: [sticker.path],
-                });
-                return true;
-            } catch (err) {
-                logger.warn(`Webhook dispatch failed in #${channel.name}:`, err.message);
-            }
-        }
-
-        // Fallback: send directly through channel
-        try {
-            await channel.send({
-                content: content ? `${content}\n*(sent by ${user})*` : `*(sent by ${user})*`,
-                files: [sticker.path],
-            });
-            return true;
-        } catch (err) {
-            logger.error(`Direct sticker dispatch failed in #${channel.name}:`, err);
-            return false;
-        }
     }
 }
 

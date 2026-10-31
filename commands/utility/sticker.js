@@ -5,12 +5,12 @@ const logger = require('../../utils/logger');
 
 module.exports = {
     name: 'sticker',
-    description: 'Send a custom sticker anywhere in this server.',
+    description: 'Send a custom sticker directly in chat.',
     category: 'utility',
 
     data: new SlashCommandBuilder()
         .setName('sticker')
-        .setDescription('Send a custom sticker anywhere in this server')
+        .setDescription('Send a custom sticker directly in chat')
         .addStringOption(option =>
             option
                 .setName('name')
@@ -31,9 +31,9 @@ module.exports = {
         await interaction.respond(choices);
     },
 
-    async execute(interaction, client) {
+    async execute(interaction) {
         const query = interaction.options.getString('name');
-        const customMessage = interaction.options.getString('message') || '';
+        const customMessage = interaction.options.getString('message');
 
         const sticker = stickerManager.get(query);
         if (!sticker) {
@@ -43,26 +43,18 @@ module.exports = {
             });
         }
 
-        const success = await stickerManager.sendAsUser({
-            channel: interaction.channel,
-            user: interaction.user,
-            member: interaction.member,
-            sticker,
-            client,
-            content: customMessage,
-        });
-
-        if (!success) {
+        try {
+            await interaction.reply({
+                content: customMessage || undefined,
+                files: [sticker.path],
+            });
+            logger.info(`${interaction.user.tag} sent sticker ${sticker.id}`);
+        } catch (err) {
+            logger.error(`Failed to send sticker ${sticker.id}:`, err);
             return interaction.reply({
-                embeds: [UI.error('Delivery Failed', 'Unable to send sticker in this channel. Check bot permissions.')],
+                embeds: [UI.error('Failed to Send', 'Could not send the sticker attachment. Check bot permissions.')],
                 ephemeral: true,
             });
         }
-
-        return interaction.reply({
-            embeds: [UI.success('Sticker Sent', `Delivered **${sticker.id}** to <#${interaction.channel.id}>.`)],
-            ephemeral: true,
-        });
     },
 };
-

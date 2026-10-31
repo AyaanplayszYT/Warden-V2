@@ -79,7 +79,7 @@ module.exports = {
             }
         }
 
-        // Custom Sticker / Nitro-Style Chat Shortcut (:name: or ;name)
+        // Custom Sticker Chat Shortcut (:name: or ;name)
         const trimmed = message.content.trim();
         const isEmojiFormat = trimmed.startsWith(':') && trimmed.endsWith(':') && trimmed.length > 2;
         const isSemicolonFormat = trimmed.startsWith(';') && !trimmed.startsWith(';;') && trimmed.length > 1 && !trimmed.includes(' ');
@@ -87,17 +87,11 @@ module.exports = {
         if (isEmojiFormat || isSemicolonFormat) {
             const sticker = stickerManager.get(trimmed);
             if (sticker) {
-                stickerManager.markReplacedMessage(message.id);
-                if (message.channel.permissionsFor(message.guild.members.me)?.has(PermissionFlagsBits.ManageMessages)) {
-                    await message.delete().catch(() => {});
+                try {
+                    await message.reply({ files: [sticker.path] });
+                } catch (err) {
+                    logger.error(`Failed to reply with sticker ${sticker.id}:`, err);
                 }
-                await stickerManager.sendAsUser({
-                    channel: message.channel,
-                    user: message.author,
-                    member: message.member,
-                    sticker,
-                    client,
-                });
                 return;
             }
         }
