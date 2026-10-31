@@ -2,6 +2,7 @@ const { Events, Collection, PermissionFlagsBits } = require('discord.js');
 const { prefix, ownerId } = require('../config/config.json');
 const { UI } = require('../utils/embedBuilder');
 const channelConfig = require('../utils/channelConfig');
+const stickerManager = require('../utils/stickerManager');
 const logger = require('../utils/logger');
 const fs = require('fs');
 const path = require('path');
@@ -75,6 +76,29 @@ module.exports = {
 
             if (isDirectMention || !message.reference) {
                 return message.reply({ content: PING_GIF_URL });
+            }
+        }
+
+        // Custom Sticker / Nitro-Style Chat Shortcut (:name: or ;name)
+        const trimmed = message.content.trim();
+        const isEmojiFormat = trimmed.startsWith(':') && trimmed.endsWith(':') && trimmed.length > 2;
+        const isSemicolonFormat = trimmed.startsWith(';') && !trimmed.startsWith(';;') && trimmed.length > 1 && !trimmed.includes(' ');
+
+        if (isEmojiFormat || isSemicolonFormat) {
+            const sticker = stickerManager.get(trimmed);
+            if (sticker) {
+                stickerManager.markReplacedMessage(message.id);
+                if (message.channel.permissionsFor(message.guild.members.me)?.has(PermissionFlagsBits.ManageMessages)) {
+                    await message.delete().catch(() => {});
+                }
+                await stickerManager.sendAsUser({
+                    channel: message.channel,
+                    user: message.author,
+                    member: message.member,
+                    sticker,
+                    client,
+                });
+                return;
             }
         }
 

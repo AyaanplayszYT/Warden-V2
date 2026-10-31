@@ -117,3 +117,4 @@ class IgnoreManager {
 }
 
 module.exports = new IgnoreManager();
+

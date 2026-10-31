@@ -10,8 +10,8 @@ const CATEGORIES = {
     },
     utility: {
         name: 'Utility',
-        description: 'Productivity, polls, reminders, and snipes',
-        commands: ['poll', 'remind', 'snipe', 'ping', 'help'],
+        description: 'Productivity, polls, reminders, snipes, and custom stickers',
+        commands: ['sticker', 'stickers', 'poll', 'remind', 'snipe', 'ping', 'help'],
     },
     info: {
         name: 'Intelligence',
@@ -66,7 +66,7 @@ module.exports = {
             .title('Warden • Command Directory')
             .desc('Select a category from the dropdown menu to inspect commands.\nUse `/help command:<name>` for detailed parameter syntax.')
             .field('Moderation', '12 commands • Ban, kick, mute, warn, purge, lock...', false)
-            .field('Utility', '5 commands • Polls, reminders, snipes, latency...', false)
+            .field('Utility', '7 commands • Custom stickers, polls, reminders, snipes, latency...', false)
             .field('Intelligence', '5 commands • Userinfo, serverinfo, roles, avatars...', false)
             .field('Configuration', '6 commands • Ignore lists, log routing, color roles...', false)
             .build();

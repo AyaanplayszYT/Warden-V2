@@ -57,3 +57,4 @@ class ChannelConfig {
 }
 
 module.exports = new ChannelConfig();
+

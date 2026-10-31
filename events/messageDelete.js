@@ -4,6 +4,7 @@ const modLogs = require('../utils/modLogs');
 const { UI } = require('../utils/embedBuilder');
 const channelConfig = require('../utils/channelConfig');
 const ignoreManager = require('../utils/ignoreManager');
+const stickerManager = require('../utils/stickerManager');
 
 let snipeCommand;
 try {
@@ -16,6 +17,9 @@ module.exports = {
     name: Events.MessageDelete,
     async execute(message, client) {
         if (message.partial || !message.guild || !message.author) return;
+
+        // Skip replaced sticker trigger messages
+        if (stickerManager.isReplacedMessage(message.id)) return;
 
         // Skip ignored channels or users immediately
         if (ignoreManager.isChannelIgnored(message.channel.id) || ignoreManager.isUserIgnored(message.author.id)) {
