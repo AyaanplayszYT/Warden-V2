@@ -82,3 +82,4 @@ module.exports = {
     generate,
     TUNGTUNG_SYSTEM,
 };
+
