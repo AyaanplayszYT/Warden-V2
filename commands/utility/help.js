@@ -23,6 +23,11 @@ const CATEGORIES = {
         description: 'Log routing, ignore lists, and color setup',
         commands: ['ignore', 'setmodlog', 'setspamlog', 'setupcolors', 'modlogs', 'spamlogs'],
     },
+    ai: {
+        name: 'TungTung AI',
+        description: 'Funky AI roasts, chat summaries, lore generation, and ships',
+        commands: ['roast', 'tldr', 'lore', 'ship'],
+    },
 };
 
 module.exports = {
@@ -69,6 +74,7 @@ module.exports = {
             .field('Utility', '7 commands • Custom stickers, polls, reminders, snipes, latency...', false)
             .field('Intelligence', '5 commands • Userinfo, serverinfo, roles, avatars...', false)
             .field('Configuration', '6 commands • Ignore lists, log routing, color roles...', false)
+            .field('TungTung AI', '4 commands • Roasts, channel TL;DR, lore, compatibility ship...', false)
             .build();
 
         const select = new StringSelectMenuBuilder()
