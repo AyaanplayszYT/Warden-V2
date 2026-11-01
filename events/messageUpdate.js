@@ -17,8 +17,8 @@ module.exports = {
         if (oldMessage.partial || !oldMessage.guild || !oldMessage.author) return;
         if (oldMessage.content === newMessage.content) return;
 
-        // Skip ignored channels or users immediately
-        if (ignoreManager.isChannelIgnored(oldMessage.channel.id) || ignoreManager.isUserIgnored(oldMessage.author.id)) {
+        // Skip ignored channels (or categories) or users immediately
+        if (ignoreManager.isChannelIgnored(oldMessage.channel || oldMessage.channelId) || ignoreManager.isUserIgnored(oldMessage.author.id)) {
             return;
         }
 

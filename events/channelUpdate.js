@@ -2,10 +2,21 @@ const { Events } = require('discord.js');
 const logger = require('../utils/logger');
 const { UI } = require('../utils/embedBuilder');
 const channelConfig = require('../utils/channelConfig');
+const ignoreManager = require('../utils/ignoreManager');
 
 module.exports = {
     name: Events.ChannelUpdate,
     async execute(oldChannel, newChannel, client) {
+        // Skip ignored channels (or ignored categories)
+        if (ignoreManager.isChannelIgnored(newChannel) || ignoreManager.isChannelIgnored(oldChannel)) {
+            return;
+        }
+
+        // Only log if the channel name actually changed
+        if (oldChannel.name === newChannel.name) {
+            return;
+        }
+
         const modLogChannelId = channelConfig.getModLog();
         const guild = newChannel.guild || (newChannel.parent && newChannel.parent.guild);
 

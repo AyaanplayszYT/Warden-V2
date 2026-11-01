@@ -29,18 +29,27 @@ class IgnoreManager {
         }
     }
 
-    isChannelIgnored(channelId) {
-        if (!channelId) return false;
-        return this.ignoredChannels.has(String(channelId));
+    isChannelIgnored(channelOrId) {
+        if (!channelOrId) return false;
+        if (typeof channelOrId === 'string') {
+            return this.ignoredChannels.has(channelOrId);
+        }
+        const id = channelOrId.id;
+        const parentId = channelOrId.parentId;
+        if (id && this.ignoredChannels.has(String(id))) return true;
+        if (parentId && this.ignoredChannels.has(String(parentId))) return true;
+        return false;
     }
 
-    isUserIgnored(userId) {
-        if (!userId) return false;
-        return this.ignoredUsers.has(String(userId));
+    isUserIgnored(userOrId) {
+        if (!userOrId) return false;
+        const id = typeof userOrId === 'string' ? userOrId : userOrId.id;
+        if (!id) return false;
+        return this.ignoredUsers.has(String(id));
     }
 
-    isIgnored(channelId, userId) {
-        return this.isChannelIgnored(channelId) || this.isUserIgnored(userId);
+    isIgnored(channelOrId, userOrId) {
+        return this.isChannelIgnored(channelOrId) || this.isUserIgnored(userOrId);
     }
 
     async addChannel(channelId) {

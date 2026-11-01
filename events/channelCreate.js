@@ -2,10 +2,16 @@ const { Events } = require('discord.js');
 const logger = require('../utils/logger');
 const { UI } = require('../utils/embedBuilder');
 const channelConfig = require('../utils/channelConfig');
+const ignoreManager = require('../utils/ignoreManager');
 
 module.exports = {
     name: Events.ChannelCreate,
     async execute(channel, client) {
+        // Skip ignored channels (or ignored categories)
+        if (ignoreManager.isChannelIgnored(channel)) {
+            return;
+        }
+
         const modLogChannelId = channelConfig.getModLog();
         const guild = channel.guild || (channel.parent && channel.parent.guild);
 

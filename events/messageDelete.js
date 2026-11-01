@@ -17,8 +17,8 @@ module.exports = {
     async execute(message, client) {
         if (message.partial || !message.guild || !message.author) return;
 
-        // Skip ignored channels or users immediately
-        if (ignoreManager.isChannelIgnored(message.channel.id) || ignoreManager.isUserIgnored(message.author.id)) {
+        // Skip ignored channels (or categories) or users immediately
+        if (ignoreManager.isChannelIgnored(message.channel || message.channelId) || ignoreManager.isUserIgnored(message.author.id)) {
             return;
         }
 

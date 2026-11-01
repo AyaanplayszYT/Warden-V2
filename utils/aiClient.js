@@ -3,10 +3,10 @@ const logger = require('./logger');
 const OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
 const DEFAULT_MODELS = [
     process.env.OPENROUTER_MODEL,
-    'meta-llama/llama-3.3-70b-instruct:free',
+    'google/gemma-4-26b-a4b-it:free',
+    'google/gemma-4-31b-it:free',
     'google/gemini-2.0-flash-exp:free',
-    'deepseek/deepseek-r1:free',
-    'qwen/qwen-2.5-72b-instruct:free',
+    'meta-llama/llama-3.3-70b-instruct:free',
 ].filter(Boolean);
 
 const TUNGTUNG_SYSTEM = `You are TungTungSecure AI, an eccentric, funky, hyper-witty cyber-intelligence entity guarding this Discord server.
