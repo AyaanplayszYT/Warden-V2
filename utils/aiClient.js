@@ -5,8 +5,7 @@ const DEFAULT_MODELS = [
     process.env.OPENROUTER_MODEL,
     'google/gemma-4-26b-a4b-it:free',
     'google/gemma-4-31b-it:free',
-    'google/gemini-2.0-flash-exp:free',
-    'meta-llama/llama-3.3-70b-instruct:free',
+    'openrouter/free',
 ].filter(Boolean);
 
 const TUNGTUNG_SYSTEM = `You are TungTungSecure AI, an eccentric, funky, hyper-witty cyber-intelligence entity guarding this Discord server.
@@ -41,6 +40,7 @@ async function generate({ prompt, system = TUNGTUNG_SYSTEM, temperature = 0.85, 
                 },
                 body: JSON.stringify({
                     model,
+                    models: [model, 'openrouter/free'].filter((m, i, arr) => m && arr.indexOf(m) === i),
                     messages: [
                         { role: 'system', content: system },
                         { role: 'user', content: prompt },
@@ -55,8 +55,15 @@ async function generate({ prompt, system = TUNGTUNG_SYSTEM, temperature = 0.85, 
 
             if (!response.ok) {
                 const errBody = await response.text().catch(() => '');
-                logger.warn(`OpenRouter model ${model} failed (${response.status}): ${errBody.substring(0, 100)}`);
-                lastError = new Error(`Model ${model} returned status ${response.status}`);
+                let detail = `status ${response.status}`;
+                try {
+                    const parsed = JSON.parse(errBody);
+                    if (parsed.error?.message) {
+                        detail = parsed.error.message;
+                    }
+                } catch (e) {}
+                logger.warn(`OpenRouter model ${model} failed (${response.status}): ${detail}`);
+                lastError = new Error(`${model}: ${detail}`);
                 continue; // Try next fallback model
             }
 
@@ -82,4 +89,3 @@ module.exports = {
     generate,
     TUNGTUNG_SYSTEM,
 };
-
