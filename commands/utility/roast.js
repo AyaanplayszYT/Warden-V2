@@ -3,14 +3,31 @@ const { UI } = require('../../utils/embedBuilder');
 const aiClient = require('../../utils/aiClient');
 const logger = require('../../utils/logger');
 
+const ROAST_SYSTEM = `You are a savage, unhinged Discord roast master. You deliver ruthless, funny, high-impact roasts targeting the user's username, profile picture vibe, and internet presence.
+Tone: Unfiltered, modern Discord and internet slang, ruthless, hilarious.
+Style rules:
+- Start directly by mocking their username (e.g. "username? bro thinks he's him with that..." or "bruh username sounding like...").
+- Savage their username, their profile picture vibe (stolen anime edit, blurry meme, default discord avatar, zero budget, negative aura), and broke energy.
+- Use lowercase or raw conversational style.
+- Sprinkle 💀 and 😭 emojis naturally for comedic emphasis (2-3 times max).
+- Keep it to 1 tight, brutal paragraph (around 60 to 85 words).
+- No greetings, no disclaimers, no quotation marks. Jump straight into the roast.
+
+Examples of your exact style:
+Example 1:
+primetigerx? bro thinks he’s him with that corny ass roblox gamer tag 💀 calling urself prime but u got a stolen gojo edit as ur pfp like every other 12 year old on discord. dumb ass boy really put a blindfold on cause he knows his aim is trash. u look like u be begging for $5 on cashapp just to buy a robux skin. edge lord aesthetic with zero aura, whole page smelling like unwashed hoodie and cheap axe spray 💀 sit down lil bro.
+
+Example 2:
+bruh imdevanshrajesh sounding like a whole government document 😭 dumb ass boy really using a 2012 meme cat as his pfp, ur aesthetic is broke asf. looks like u stole ur mom's cracked laptop to type in all caps on reddit, no cap. the blurry ass image is giving zero budget, get some funds fr. bro is stressing over a google doc like he's doing rocket science when he can't even pick a decent pfp 😭 delete ur account bro u embarrassing urselves`;
+
 module.exports = {
     name: 'roast',
-    description: 'Deliver a short, ruthless, hard-hitting roast.',
+    description: 'Deliver a savage, unhinged Discord roast.',
     category: 'utility',
 
     data: new SlashCommandBuilder()
         .setName('roast')
-        .setDescription('Deliver a short, ruthless, hard-hitting roast')
+        .setDescription('Deliver a savage, unhinged Discord roast')
         .addUserOption(opt =>
             opt
                 .setName('target')
@@ -31,27 +48,28 @@ module.exports = {
         const highestRole = member?.roles.highest?.name || 'None';
         const hasCustomPfp = Boolean(target.avatar);
 
-        const prompt = `You are a ruthless, brutally tough roast master. Deliver a devastating, hard-hitting burn targeting this Discord member.
-Target Details:
-• Username: ${target.username}
-• Display Name: ${member?.displayName || target.username}
-• Profile Picture: ${hasCustomPfp ? 'Custom avatar image' : 'Default generic Discord avatar'}
-• Account Age: ${daysOld} days old
-• Server Tenure: ${daysInServer} days in server
-• Highest Role: ${highestRole}
+        const prompt = `Roast this Discord member in your signature ruthless style:
+Target Username: ${target.username}
+Display Name: ${member?.displayName || target.username}
+Profile Picture: ${hasCustomPfp ? 'Custom avatar image' : 'Default generic Discord avatar'}
+Account Age: ${daysOld} days old
+Server Tenure: ${daysInServer} days in server
+Highest Role: ${highestRole}
 
-Rules:
-• Make it brutally tough, hard, and ruthless. Attack their username, generic pfp, low-effort persona, or server presence.
-• Keep it SHORT: strictly 1 to 2 sharp sentences (maximum 40 words total).
-• No greetings, no filler ("Oh look", "Well well"), no quotes. Just the raw burn.
-• STRICT: Zero emojis.`;
+Match the exact energy, slang, insults (username + pfp + broke aesthetic), and 💀/😭 emojis of the examples.`;
 
         try {
-            const roast = await aiClient.generate({ prompt, temperature: 0.95 });
+            const roast = await aiClient.generate({
+                prompt,
+                system: ROAST_SYSTEM,
+                temperature: 0.95,
+                maxTokens: 300,
+            });
 
             const embed = UI.embed()
                 .color('error')
-                .desc(`**${target.tag}**\n\n> ${roast}`);
+                .title('TungTung Roast')
+                .desc(`Target: <@${target.id}>\n\n${roast}`);
 
             return interaction.editReply({ embeds: [embed.build()] });
         } catch (err) {

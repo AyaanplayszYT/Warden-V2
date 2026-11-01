@@ -71,9 +71,7 @@ async function generate({ prompt, system = TUNGTUNG_SYSTEM, temperature = 0.85, 
             const reply = data.choices?.[0]?.message?.content?.trim();
 
             if (reply) {
-                // Strip any rogue emojis just in case
-                const cleanReply = reply.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1FA70}-\u{1FAFF}]/gu, '');
-                return cleanReply;
+                return reply;
             }
         } catch (err) {
             clearTimeout(timeout);
