@@ -3,39 +3,42 @@ const { UI } = require('../../utils/embedBuilder');
 const aiClient = require('../../utils/aiClient');
 const logger = require('../../utils/logger');
 
-function getSynergyScore(id1, id2) {
+function getLoveScore(id1, id2) {
     try {
-        const combined = BigInt(id1) + BigInt(id2);
-        return Number(combined % 101n);
+        const n1 = BigInt(id1);
+        const n2 = BigInt(id2);
+        // Generates an affectionate synergy score between 62% and 99%
+        const seed = (n1 * 17n + n2 * 31n) % 38n;
+        return 62 + Number(seed);
     } catch (e) {
-        return Math.floor(Math.random() * 100) + 1;
+        return Math.floor(Math.random() * 30) + 70;
     }
 }
 
 function makeProgressBar(percent) {
-    const totalBars = 12;
+    const totalBars = 10;
     const filled = Math.round((percent / 100) * totalBars);
     return `[${'■'.repeat(filled)}${'□'.repeat(totalBars - filled)}]`;
 }
 
 module.exports = {
     name: 'ship',
-    description: 'TungTungSecure AI evaluates romantic and chaotic compatibility between two members.',
+    description: 'Evaluate romantic chemistry and affection between two members.',
     category: 'utility',
 
     data: new SlashCommandBuilder()
         .setName('ship')
-        .setDescription('TungTungSecure AI evaluates compatibility between two members')
+        .setDescription('Evaluate romantic chemistry and affection between two members')
         .addUserOption(opt =>
             opt
                 .setName('first_user')
-                .setDescription('The first member')
+                .setDescription('First member')
                 .setRequired(true)
         )
         .addUserOption(opt =>
             opt
                 .setName('second_user')
-                .setDescription('The second member')
+                .setDescription('Second member')
                 .setRequired(true)
         ),
 
@@ -49,41 +52,42 @@ module.exports = {
             return interaction.editReply({
                 embeds: [
                     UI.info(
-                        'Self-Obsession Detected',
-                        'TungTungSecure calculates a **100%** narcissistic compatibility score with yourself. Go touch some digital grass.'
+                        'Self-Love',
+                        'A perfect 100% self-love score. Unmatched inner peace.'
                     ),
                 ],
             });
         }
 
-        const score = getSynergyScore(user1.id, user2.id);
+        const score = getLoveScore(user1.id, user2.id);
         const bar = makeProgressBar(score);
 
-        const prompt = `Evaluate the relationship and compatibility of these two Discord members.
+        const prompt = `Write an affectionate, deeply heartwarming, and sweet romantic ship evaluation for two Discord members.
 Member 1: ${user1.username}
 Member 2: ${user2.username}
-Calculated Synergy Score: ${score}%
+Love Synergy: ${score}%
 
-Provide a funky, witty assessment featuring these bullet points:
-• Duo Codename: A fused couple moniker
-• Relationship Dynamic: How they act together and the chaos they bring
-• TungTung Threat Assessment: Why this pairing poses a danger to server peace
-• Future Forecast: A ridiculous prophecy of their future together
+Format using strictly these concise bullet points:
+• Duo: An adorable fused couple moniker
+• Connection: Why their personalities complement each other and their wholesome chemistry
+• Forecast: A sweet, lovable prediction of their future together
 
-Remember: Zero emojis. Keep it under 180 words. Be sarcastic, funky, and entertaining.`;
+Rules:
+• Keep it genuinely loving, warm, and sweet (not sarcastic).
+• Keep it minimal and concise (under 80 words total).
+• STRICT: Zero emojis.`;
 
         try {
-            const analysis = await aiClient.generate({ prompt, temperature: 0.85 });
+            const analysis = await aiClient.generate({ prompt, temperature: 0.8 });
 
             const embed = UI.embed()
-                .color(score > 70 ? 'success' : score > 40 ? 'warning' : 'error')
-                .title('TungTungSecure • Compatibility Matrix')
+                .color('primary')
+                .title('Affinity Matrix')
                 .desc(
-                    `Coupling: <@${user1.id}> + <@${user2.id}>\n` +
-                    `Synergy Index: **${score}%** \`${bar}\`\n\n` +
+                    `<@${user1.id}> + <@${user2.id}>\n` +
+                    `Synergy: **${score}%** \`${bar}\`\n\n` +
                     `${analysis}`
-                )
-                .footer(`TungTung Compatibility Engine • Requested by ${interaction.user.tag}`);
+                );
 
             return interaction.editReply({ embeds: [embed.build()] });
         } catch (err) {
@@ -94,11 +98,10 @@ Remember: Zero emojis. Keep it under 180 words. Be sarcastic, funky, and enterta
                         'Compatibility Sensor Failure',
                         err.message.includes('OPENROUTER_API_KEY')
                             ? 'OpenRouter API key is not configured in .env (add `OPENROUTER_API_KEY=your_key`).'
-                            : `TungTung matrix calculation encountered an error: ${err.message}`
+                            : `Affinity analysis failed: ${err.message}`
                     ),
                 ],
             });
         }
     },
 };
-
